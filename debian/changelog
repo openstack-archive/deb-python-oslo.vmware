@@ -1,0 +1,5 @@
+python-oslo.vmware (0.2-1) unstable; urgency=low
+
+  * Initial release. (Closes: #740806)
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 05 Mar 2014 15:29:17 +0800
