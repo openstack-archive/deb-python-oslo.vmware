@@ -1,4 +1,4 @@
-python-oslo.vmware (0.2-1) unstable; urgency=low
+python-oslo.vmware (0.2-1) experimental; urgency=low
 
   * Initial release. (Closes: #740806)
 
