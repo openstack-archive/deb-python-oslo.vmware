@@ -2,7 +2,7 @@ Document: python-oslo.vmware-doc
 Title: oslo.vmware Documentation
 Author: OpenStack
 Abstract: Sphinx documentation for oslo.vmware
-Section: Python/Programming
+Section: Programming/Python
 
 Format: HTML
 Index: /usr/share/doc/python-oslo.vmware-doc/html/index.html
