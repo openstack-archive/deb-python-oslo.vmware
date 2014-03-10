@@ -7,7 +7,9 @@ Copyright: (c) 2013, Thomas Goirand <zigo@debian.org>
 License: Apache-2
 
 Files: *
-Copyright: (c) 2013, OpenStack
+Copyright: (c) 2013, OpenStack Foundation
+           (c) 2013, Hewlett-Packard Development Company, L.P.
+           (c) 2014, VMware, Inc.
 License: Apache-2
 
 License: Apache-2
