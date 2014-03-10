@@ -55,6 +55,7 @@ Description: VMware library for OpenStack projects - Python 2.x
  This package contains the Python 2.x module.
 
 Package: python-oslo.vmware-doc
+Section: doc
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: ${misc:Depends}, ${sphinxdoc:Depends}
