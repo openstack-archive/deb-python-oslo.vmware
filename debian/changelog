@@ -7,6 +7,7 @@ python-oslo.vmware (0.3-1) unstable; urgency=medium
   * New upstream release.
   * Uploading to unstable.
   * Fixed UPSTREAM_GIT url in debian/rules.
+  * Fixed new (build-)requirements for this release.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 18 Apr 2014 05:45:49 +0000
 
