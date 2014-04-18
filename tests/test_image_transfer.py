@@ -19,10 +19,12 @@ Unit tests for functions and classes for image transfer.
 
 import math
 
+from eventlet import greenthread
 import mock
 
 from oslo.vmware import exceptions
 from oslo.vmware import image_transfer
+from oslo.vmware import rw_handles
 from tests import base
 
 
@@ -75,7 +77,8 @@ class ImageWriterTest(base.TestCase):
         return image_transfer.ImageWriter(self.context, self.input_file,
                                           self.image_service, self.image_id)
 
-    def test_start(self):
+    @mock.patch.object(greenthread, 'sleep')
+    def test_start(self, mock_sleep):
         writer = self._create_image_writer()
         status_list = ['queued', 'saving', 'active']
 
@@ -85,9 +88,7 @@ class ImageWriterTest(base.TestCase):
 
         self.image_service.show.side_effect = image_service_show_side_effect
         exp_calls = [mock.call(self.context, self.image_id)] * len(status_list)
-        with mock.patch.object(image_transfer,
-                               'IMAGE_SERVICE_POLL_INTERVAL', 0):
-            writer.start()
+        writer.start()
         self.assertTrue(writer.wait())
         self.image_service.update.assert_called_once_with(self.context,
                                                           self.image_id, {},
@@ -145,7 +146,7 @@ class FileReadWriteTaskTest(base.TestCase):
         data_items = [[1] * 10, [1] * 20, [1] * 5, []]
 
         def input_file_read_side_effect(arg):
-            self.assertFalse(arg)
+            self.assertEqual(arg, rw_handles.READ_CHUNKSIZE)
             data = data_items[input_file_read_side_effect.i]
             input_file_read_side_effect.i += 1
             return data
@@ -176,4 +177,4 @@ class FileReadWriteTaskTest(base.TestCase):
         rw_task = image_transfer.FileReadWriteTask(input_file, output_file)
         rw_task.start()
         self.assertRaises(exceptions.ImageTransferException, rw_task.wait)
-        input_file.read.assert_called_once_with(None)
+        input_file.read.assert_called_once_with(rw_handles.READ_CHUNKSIZE)

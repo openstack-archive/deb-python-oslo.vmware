@@ -21,6 +21,7 @@ import httplib
 import logging
 import urllib2
 
+import six
 import suds
 
 from oslo.vmware import exceptions
@@ -78,7 +79,7 @@ class Vim(object):
         """
         if not wsdl_loc:
             wsdl_loc = Vim._get_wsdl_loc(protocol, host)
-        soap_url = Vim._get_soap_url(protocol, host)
+        soap_url = vim_util.get_soap_url(protocol, host)
         self._client = suds.client.Client(wsdl_loc,
                                           location=soap_url,
                                           plugins=[VimMessagePlugin()])
@@ -93,16 +94,6 @@ class Vim(object):
         :returns: default WSDL file location hosted at the server
         """
         return '%s://%s/sdk/vimService.wsdl' % (protocol, host)
-
-    @staticmethod
-    def _get_soap_url(protocol, host):
-        """Get ESX/VC server's SOAP service URL.
-
-        :param protocol: http or https
-        :param host: server IP address[:port] or host name[:port]
-        :returns: URL of ESX/VC server's SOAP service
-        """
-        return '%s://%s/sdk' % (protocol, host)
 
     @property
     def service_content(self):
@@ -221,13 +212,13 @@ class Vim(object):
 
                 # Socket errors which need special handling; some of these
                 # might be caused by server API call overload.
-                if (unicode(excep).find(ADDRESS_IN_USE_ERROR) != -1 or
-                        unicode(excep).find(CONN_ABORT_ERROR)) != -1:
+                if (six.text_type(excep).find(ADDRESS_IN_USE_ERROR) != -1 or
+                        six.text_type(excep).find(CONN_ABORT_ERROR)) != -1:
                     raise exceptions.VimSessionOverLoadException(
                         _("Socket error in %s.") % attr_name, excep)
                 # Type error which needs special handling; it might be caused
                 # by server API call overload.
-                elif unicode(excep).find(RESP_NOT_XML_ERROR) != -1:
+                elif six.text_type(excep).find(RESP_NOT_XML_ERROR) != -1:
                     raise exceptions.VimSessionOverLoadException(
                         _("Type error in %s.") % attr_name, excep)
                 else:
