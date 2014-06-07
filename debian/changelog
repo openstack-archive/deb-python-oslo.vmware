@@ -1,3 +1,9 @@
+python-oslo.vmware (0.3-2) unstable; urgency=medium
+
+  * Dropped python-hacking from b-d (just to make James Page happy... :).
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 08 Jun 2014 01:06:22 +0800
+
 python-oslo.vmware (0.3-1) unstable; urgency=medium
 
   [ Thomas Bechtold ]
