@@ -1,3 +1,9 @@
+python-oslo.vmware (0.4.0-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 28 Jul 2014 21:26:37 +0800
+
 python-oslo.vmware (0.3-2) unstable; urgency=medium
 
   * Dropped python-hacking from b-d (just to make James Page happy... :).
