@@ -31,6 +31,7 @@ import urlparse
 import netaddr
 
 from oslo.vmware import exceptions
+from oslo.vmware.openstack.common import excutils
 from oslo.vmware.openstack.common.gettextutils import _
 from oslo.vmware import vim_util
 
@@ -63,10 +64,6 @@ class FileHandle(object):
         except Exception:
             LOG.warn(_("Error occurred while closing the file handle"),
                      exc_info=True)
-
-    def __del__(self):
-        """Close the file handle on garbage collection."""
-        self.close()
 
     def _build_vim_cookie_header(self, vim_cookies):
         """Build ESX host session cookie header."""
@@ -106,13 +103,13 @@ class FileHandle(object):
         except Exception:
             return False
 
-    def _get_soap_url(self, scheme, host):
+    def _get_soap_url(self, scheme, host, port):
         """Returns the IPv4/v6 compatible SOAP URL for the given host."""
         if self._is_valid_ipv6(host):
-            return '%s://[%s]' % (scheme, host)
-        return '%s://%s' % (scheme, host)
+            return '%s://[%s]:%d' % (scheme, host, port)
+        return '%s://%s:%d' % (scheme, host, port)
 
-    def _fix_esx_url(self, url, host):
+    def _fix_esx_url(self, url, host, port):
         """Fix netloc in the case of an ESX host.
 
         In the case of an ESX host, the netloc is set to '*' in the URL
@@ -122,38 +119,43 @@ class FileHandle(object):
         urlp = urlparse.urlparse(url)
         if urlp.netloc == '*':
             scheme, netloc, path, params, query, fragment = urlp
+            if netaddr.valid_ipv6(host):
+                netloc = '[%s]:%d' % (host, port)
+            else:
+                netloc = "%s:%d" % (host, port)
             url = urlparse.urlunparse((scheme,
-                                       host,
+                                       netloc,
                                        path,
                                        params,
                                        query,
                                        fragment))
         return url
 
-    def _find_vmdk_url(self, lease_info, host):
+    def _find_vmdk_url(self, lease_info, host, port):
         """Find the URL corresponding to a VMDK file in lease info."""
-        LOG.debug(_("Finding VMDK URL from lease info."))
+        LOG.debug("Finding VMDK URL from lease info.")
         url = None
         for deviceUrl in lease_info.deviceUrl:
             if deviceUrl.disk:
-                url = self._fix_esx_url(deviceUrl.url, host)
+                url = self._fix_esx_url(deviceUrl.url, host, port)
                 break
         if not url:
             excep_msg = _("Could not retrieve VMDK URL from lease info.")
             LOG.error(excep_msg)
             raise exceptions.VimException(excep_msg)
-        LOG.debug(_("Found VMDK URL: %s from lease info."), url)
+        LOG.debug("Found VMDK URL: %s from lease info.", url)
         return url
 
 
 class FileWriteHandle(FileHandle):
     """Write handle for a file in VMware server."""
 
-    def __init__(self, host, data_center_name, datastore_name, cookies,
+    def __init__(self, host, port, data_center_name, datastore_name, cookies,
                  file_path, file_size, scheme='https'):
         """Initializes the write handle with given parameters.
 
-        :param host: ESX/VC server IP address[:port] or host name[:port]
+        :param host: ESX/VC server IP address or host name
+        :param port: port for connection
         :param data_center_name: name of the data center in the case of a VC
                                  server
         :param datastore_name: name of the datastore where the file is stored
@@ -163,7 +165,7 @@ class FileWriteHandle(FileHandle):
         :param scheme: protocol-- http or https
         :raises: VimConnectionException, ValueError
         """
-        soap_url = self._get_soap_url(scheme, host)
+        soap_url = self._get_soap_url(scheme, host, port)
         param_list = {'dcPath': data_center_name, 'dsName': datastore_name}
         self._url = '%s/folder/%s' % (soap_url, file_path)
         self._url = self._url + '?' + urllib.urlencode(param_list)
@@ -175,8 +177,8 @@ class FileWriteHandle(FileHandle):
 
     def _create_connection(self, url, file_size, cookies):
         """Create HTTP connection to write to the file with given URL."""
-        LOG.debug(_("Creating HTTP connection to write to file with "
-                    "size = %(file_size)d and URL = %(url)s."),
+        LOG.debug("Creating HTTP connection to write to file with "
+                  "size = %(file_size)d and URL = %(url)s.",
                   {'file_size': file_size,
                    'url': url})
         _urlparse = urlparse.urlparse(url)
@@ -197,8 +199,8 @@ class FileWriteHandle(FileHandle):
             conn.putheader('Content-Length', file_size)
             conn.putheader('Cookie', self._build_vim_cookie_header(cookies))
             conn.endheaders()
-            LOG.debug(_("Created HTTP connection to write to file with "
-                        "URL = %s."), url)
+            LOG.debug("Created HTTP connection to write to file with "
+                      "URL = %s.", url)
             return conn
         except (httplib.InvalidURL, httplib.CannotSendRequest,
                 httplib.CannotSendHeader) as excep:
@@ -213,7 +215,7 @@ class FileWriteHandle(FileHandle):
         :param data: data to be written
         :raises: VimConnectionException, VimException
         """
-        LOG.debug(_("Writing data to %s."), self._url)
+        LOG.debug("Writing data to %s.", self._url)
         try:
             self._file_handle.send(data)
         except (socket.error, httplib.NotConnected) as excep:
@@ -232,14 +234,14 @@ class FileWriteHandle(FileHandle):
 
     def close(self):
         """Get the response and close the connection."""
-        LOG.debug(_("Closing write handle for %s."), self._url)
+        LOG.debug("Closing write handle for %s.", self._url)
         try:
             self.conn.getresponse()
         except Exception:
             LOG.warn(_("Error occurred while reading the HTTP response."),
                      exc_info=True)
         super(FileWriteHandle, self).close()
-        LOG.debug(_("Closed write handle for %s."), self._url)
+        LOG.debug("Closed write handle for %s.", self._url)
 
     def __str__(self):
         return "File write handle for %s" % self._url
@@ -252,12 +254,13 @@ class VmdkWriteHandle(FileHandle):
     virtual disk contents.
     """
 
-    def __init__(self, session, host, rp_ref, vm_folder_ref, import_spec,
+    def __init__(self, session, host, port, rp_ref, vm_folder_ref, import_spec,
                  vmdk_size):
         """Initializes the VMDK write handle with input parameters.
 
         :param session: valid API session to ESX/VC server
-        :param host: ESX/VC server IP address[:port] or host name[:port]
+        :param host: ESX/VC server IP address or host name
+        :param port: port for connection
         :param rp_ref: resource pool into which the backing VM is imported
         :param vm_folder_ref: VM folder in ESX/VC inventory to use as parent
                               of backing VM
@@ -276,7 +279,7 @@ class VmdkWriteHandle(FileHandle):
                                                       rp_ref,
                                                       import_spec,
                                                       vm_folder_ref)
-        LOG.debug(_("Invoking VIM API for reading info of lease: %s."),
+        LOG.debug("Invoking VIM API for reading info of lease: %s.",
                   self._lease)
         lease_info = session.invoke_api(vim_util,
                                         'get_object_property',
@@ -285,7 +288,7 @@ class VmdkWriteHandle(FileHandle):
                                         'info')
 
         # Find VMDK URL where data is to be written
-        self._url = self._find_vmdk_url(lease_info, host)
+        self._url = self._find_vmdk_url(lease_info, host, port)
         self._vm_ref = lease_info.entity
 
         # Create HTTP connection to write to VMDK URL
@@ -299,16 +302,16 @@ class VmdkWriteHandle(FileHandle):
     def _create_and_wait_for_lease(self, session, rp_ref, import_spec,
                                    vm_folder_ref):
         """Create and wait for HttpNfcLease lease for vApp import."""
-        LOG.debug(_("Creating HttpNfcLease lease for vApp import into resource"
-                    " pool: %s."),
+        LOG.debug("Creating HttpNfcLease lease for vApp import into resource"
+                  " pool: %s.",
                   rp_ref)
         lease = session.invoke_api(session.vim,
                                    'ImportVApp',
                                    rp_ref,
                                    spec=import_spec,
                                    folder=vm_folder_ref)
-        LOG.debug(_("Lease: %(lease)s obtained for vApp import into resource"
-                    " pool %(rp_ref)s."),
+        LOG.debug("Lease: %(lease)s obtained for vApp import into resource"
+                  " pool %(rp_ref)s.",
                   {'lease': lease,
                    'rp_ref': rp_ref})
         session.wait_for_lease_ready(lease)
@@ -316,8 +319,8 @@ class VmdkWriteHandle(FileHandle):
 
     def _create_connection(self, session, url, vmdk_size):
         """Create HTTP connection to write to VMDK file."""
-        LOG.debug(_("Creating HTTP connection to write to VMDK file with "
-                    "size = %(vmdk_size)d and URL = %(url)s."),
+        LOG.debug("Creating HTTP connection to write to VMDK file with "
+                  "size = %(vmdk_size)d and URL = %(url)s.",
                   {'vmdk_size': vmdk_size,
                    'url': url})
         cookies = session.vim.client.options.transport.cookiejar
@@ -343,8 +346,8 @@ class VmdkWriteHandle(FileHandle):
             conn.putheader('Cookie', self._build_vim_cookie_header(cookies))
             conn.putheader('Content-Type', 'binary/octet-stream')
             conn.endheaders()
-            LOG.debug(_("Created HTTP connection to write to VMDK file with "
-                        "URL = %s."),
+            LOG.debug("Created HTTP connection to write to VMDK file with "
+                      "URL = %s.",
                       url)
             return conn
         except (httplib.InvalidURL, httplib.CannotSendRequest,
@@ -360,13 +363,13 @@ class VmdkWriteHandle(FileHandle):
         :param data: data to be written
         :raises: VimConnectionException, VimException
         """
-        LOG.debug(_("Writing data to VMDK file with URL = %s."), self._url)
+        LOG.debug("Writing data to VMDK file with URL = %s.", self._url)
 
         try:
             self._file_handle.send(data)
             self._bytes_written += len(data)
-            LOG.debug(_("Total %(bytes_written)d bytes written to VMDK file "
-                        "with URL = %(url)s."),
+            LOG.debug("Total %(bytes_written)d bytes written to VMDK file "
+                      "with URL = %(url)s.",
                       {'bytes_written': self._bytes_written,
                        'url': self._url})
         except (socket.error, httplib.NotConnected) as excep:
@@ -393,8 +396,8 @@ class VmdkWriteHandle(FileHandle):
                  VimSessionOverLoadException, VimConnectionException
         """
         percent = int(float(self._bytes_written) / self._vmdk_size * 100)
-        LOG.debug(_("Calling VIM API to update write progress of VMDK file"
-                    " with URL = %(url)s to %(percent)d%%."),
+        LOG.debug("Calling VIM API to update write progress of VMDK file"
+                  " with URL = %(url)s to %(percent)d%%.",
                   {'url': self._url,
                    'percent': percent})
         try:
@@ -402,15 +405,15 @@ class VmdkWriteHandle(FileHandle):
                                      'HttpNfcLeaseProgress',
                                      self._lease,
                                      percent=percent)
-            LOG.debug(_("Updated write progress of VMDK file with "
-                        "URL = %(url)s to %(percent)d%%."),
+            LOG.debug("Updated write progress of VMDK file with "
+                      "URL = %(url)s to %(percent)d%%.",
                       {'url': self._url,
                        'percent': percent})
-        except exceptions.VimException as excep:
-            LOG.exception(_("Error occurred while updating the write progress "
-                            "of VMDK file with URL = %s."),
-                          self._url)
-            raise excep
+        except exceptions.VimException:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_("Error occurred while updating the "
+                                "write progress of VMDK file with URL = %s."),
+                              self._url)
 
     def close(self):
         """Releases the lease and close the connection.
@@ -418,25 +421,25 @@ class VmdkWriteHandle(FileHandle):
         :raises: VimException, VimFaultException, VimAttributeException,
                  VimSessionOverLoadException, VimConnectionException
         """
-        LOG.debug(_("Getting lease state for %s."), self._url)
+        LOG.debug("Getting lease state for %s.", self._url)
         try:
             state = self._session.invoke_api(vim_util,
                                              'get_object_property',
                                              self._session.vim,
                                              self._lease,
                                              'state')
-            LOG.debug(_("Lease for %(url)s is in state: %(state)s."),
+            LOG.debug("Lease for %(url)s is in state: %(state)s.",
                       {'url': self._url,
                        'state': state})
             if state == 'ready':
-                LOG.debug(_("Releasing lease for %s."), self._url)
+                LOG.debug("Releasing lease for %s.", self._url)
                 self._session.invoke_api(self._session.vim,
                                          'HttpNfcLeaseComplete',
                                          self._lease)
-                LOG.debug(_("Lease for %s released."), self._url)
+                LOG.debug("Lease for %s released.", self._url)
             else:
-                LOG.debug(_("Lease for %(url)s is in state: %(state)s; no "
-                            "need to release."),
+                LOG.debug("Lease for %(url)s is in state: %(state)s; no "
+                          "need to release.",
                           {'url': self._url,
                            'state': state})
         except exceptions.VimException:
@@ -444,7 +447,7 @@ class VmdkWriteHandle(FileHandle):
                      self._url,
                      exc_info=True)
         super(VmdkWriteHandle, self).close()
-        LOG.debug(_("Closed VMDK write handle for %s."), self._url)
+        LOG.debug("Closed VMDK write handle for %s.", self._url)
 
     def __str__(self):
         return "VMDK write handle for %s" % self._url
@@ -453,7 +456,7 @@ class VmdkWriteHandle(FileHandle):
 class VmdkReadHandle(FileHandle):
     """VMDK read handle based on HttpNfcLease."""
 
-    def __init__(self, session, host, vm_ref, vmdk_path, vmdk_size):
+    def __init__(self, session, host, port, vm_ref, vmdk_path, vmdk_size):
         """Initializes the VMDK read handle with the given parameters.
 
         During the read (export) operation, the VMDK file is converted to a
@@ -461,7 +464,8 @@ class VmdkReadHandle(FileHandle):
         file read may be smaller than the actual VMDK size.
 
         :param session: valid api session to ESX/VC server
-        :param host: ESX/VC server IP address[:port] or host name[:port]
+        :param host: ESX/VC server IP address or host name
+        :param port: port for connection
         :param vm_ref: managed object reference of the backing VM whose VMDK
                        is to be exported
         :param vmdk_path: path of the VMDK file to be exported
@@ -475,7 +479,7 @@ class VmdkReadHandle(FileHandle):
 
         # Obtain lease for VM export
         self._lease = self._create_and_wait_for_lease(session, vm_ref)
-        LOG.debug(_("Invoking VIM API for reading info of lease: %s."),
+        LOG.debug("Invoking VIM API for reading info of lease: %s.",
                   self._lease)
         lease_info = session.invoke_api(vim_util,
                                         'get_object_property',
@@ -484,30 +488,30 @@ class VmdkReadHandle(FileHandle):
                                         'info')
 
         # find URL of the VMDK file to be read and open connection
-        self._url = self._find_vmdk_url(lease_info, host)
+        self._url = self._find_vmdk_url(lease_info, host, port)
         self._conn = self._create_connection(session, self._url)
         FileHandle.__init__(self, self._conn)
 
     def _create_and_wait_for_lease(self, session, vm_ref):
         """Create and wait for HttpNfcLease lease for VM export."""
-        LOG.debug(_("Creating HttpNfcLease lease for exporting VM: %s."),
+        LOG.debug("Creating HttpNfcLease lease for exporting VM: %s.",
                   vm_ref)
         lease = session.invoke_api(session.vim, 'ExportVm', vm_ref)
-        LOG.debug(_("Lease: %(lease)s obtained for exporting VM: %(vm_ref)s."),
+        LOG.debug("Lease: %(lease)s obtained for exporting VM: %(vm_ref)s.",
                   {'lease': lease,
                    'vm_ref': vm_ref})
         session.wait_for_lease_ready(lease)
         return lease
 
     def _create_connection(self, session, url):
-        LOG.debug(_("Opening URL: %s for reading."), url)
+        LOG.debug("Opening URL: %s for reading.", url)
         try:
             cookies = session.vim.client.options.transport.cookiejar
             headers = {'User-Agent': USER_AGENT,
                        'Cookie': self._build_vim_cookie_header(cookies)}
             request = urllib2.Request(url, None, headers)
             conn = urllib2.urlopen(request)
-            LOG.debug(_("URL: %s opened for reading."), url)
+            LOG.debug("URL: %s opened for reading.", url)
             return conn
         except Exception as excep:
             # TODO(vbala) We need to catch and raise specific exceptions
@@ -525,13 +529,13 @@ class VmdkReadHandle(FileHandle):
         :returns: the data
         :raises: VimException
         """
-        LOG.debug(_("Reading data from VMDK file with URL = %s."), self._url)
+        LOG.debug("Reading data from VMDK file with URL = %s.", self._url)
 
         try:
             data = self._file_handle.read(READ_CHUNKSIZE)
             self._bytes_read += len(data)
-            LOG.debug(_("Total %(bytes_read)d bytes read from VMDK file "
-                        "with URL = %(url)s."),
+            LOG.debug("Total %(bytes_read)d bytes read from VMDK file "
+                      "with URL = %(url)s.",
                       {'bytes_read': self._bytes_read,
                        'url': self._url})
             return data
@@ -554,8 +558,8 @@ class VmdkReadHandle(FileHandle):
                  VimSessionOverLoadException, VimConnectionException
         """
         percent = int(float(self._bytes_read) / self._vmdk_size * 100)
-        LOG.debug(_("Calling VIM API to update read progress of VMDK file"
-                    " with URL = %(url)s to %(percent)d%%."),
+        LOG.debug("Calling VIM API to update read progress of VMDK file"
+                  " with URL = %(url)s to %(percent)d%%.",
                   {'url': self._url,
                    'percent': percent})
         try:
@@ -563,15 +567,15 @@ class VmdkReadHandle(FileHandle):
                                      'HttpNfcLeaseProgress',
                                      self._lease,
                                      percent=percent)
-            LOG.debug(_("Updated read progress of VMDK file with "
-                        "URL = %(url)s to %(percent)d%%."),
+            LOG.debug("Updated read progress of VMDK file with "
+                      "URL = %(url)s to %(percent)d%%.",
                       {'url': self._url,
                        'percent': percent})
-        except exceptions.VimException as excep:
-            LOG.exception(_("Error occurred while updating the read progress "
-                            "of VMDK file with URL = %s."),
-                          self._url)
-            raise excep
+        except exceptions.VimException:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_("Error occurred while updating the "
+                                "read progress of VMDK file with URL = %s."),
+                              self._url)
 
     def close(self):
         """Releases the lease and close the connection.
@@ -579,25 +583,25 @@ class VmdkReadHandle(FileHandle):
         :raises: VimException, VimFaultException, VimAttributeException,
                  VimSessionOverLoadException, VimConnectionException
         """
-        LOG.debug(_("Getting lease state for %s."), self._url)
+        LOG.debug("Getting lease state for %s.", self._url)
         try:
             state = self._session.invoke_api(vim_util,
                                              'get_object_property',
                                              self._session.vim,
                                              self._lease,
                                              'state')
-            LOG.debug(_("Lease for %(url)s is in state: %(state)s."),
+            LOG.debug("Lease for %(url)s is in state: %(state)s.",
                       {'url': self._url,
                        'state': state})
             if state == 'ready':
-                LOG.debug(_("Releasing lease for %s."), self._url)
+                LOG.debug("Releasing lease for %s.", self._url)
                 self._session.invoke_api(self._session.vim,
                                          'HttpNfcLeaseComplete',
                                          self._lease)
-                LOG.debug(_("Lease for %s released."), self._url)
+                LOG.debug("Lease for %s released.", self._url)
             else:
-                LOG.debug(_("Lease for %(url)s is in state: %(state)s; no "
-                            "need to release."),
+                LOG.debug("Lease for %(url)s is in state: %(state)s; no "
+                          "need to release.",
                           {'url': self._url,
                            'state': state})
         except exceptions.VimException:
@@ -606,7 +610,7 @@ class VmdkReadHandle(FileHandle):
                      exc_info=True)
             raise
         super(VmdkReadHandle, self).close()
-        LOG.debug(_("Closed VMDK read handle for %s."), self._url)
+        LOG.debug("Closed VMDK read handle for %s.", self._url)
 
     def __str__(self):
         return "VMDK read handle for %s" % self._url
@@ -630,11 +634,11 @@ class ImageReadHandle(object):
         uses its own chunk size.
         """
         try:
-            data = self._iter.next()
-            LOG.debug(_("Read %d bytes from the image iterator."), len(data))
+            data = next(self._iter)
+            LOG.debug("Read %d bytes from the image iterator.", len(data))
             return data
         except StopIteration:
-            LOG.debug(_("Completed reading data from the image iterator."))
+            LOG.debug("Completed reading data from the image iterator.")
             return ""
 
     def get_next(self):

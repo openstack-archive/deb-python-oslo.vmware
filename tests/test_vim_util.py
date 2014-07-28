@@ -75,6 +75,10 @@ class VimUtilTest(base.TestCase):
                                              'path': 'vmFolder',
                                              'skip': False,
                                              'selectSet': [sel_spec]},
+                               'dc_to_netf': {'type': 'Datacenter',
+                                              'path': 'networkFolder',
+                                              'skip': False,
+                                              'selectSet': [sel_spec]},
                                'h_to_vm': {'type': 'HostSystem',
                                            'path': 'vm',
                                            'skip': False,
@@ -207,7 +211,7 @@ class VimUtilTest(base.TestCase):
     def test_get_object_properties_with_empty_moref(self):
         vim = mock.Mock()
         ret = vim_util.get_object_properties(vim, None, None)
-        self.assertEqual(None, ret)
+        self.assertIsNone(ret)
 
     @mock.patch('oslo.vmware.vim_util.cancel_retrieval')
     def test_get_object_properties(self, cancel_retrieval):
@@ -288,3 +292,18 @@ class VimUtilTest(base.TestCase):
         self.assertEqual(prop.val, val)
         get_object_properties.assert_called_once_with(
             vim, moref, [property_name])
+
+    def test_configure_without_wsdl_loc_override(self):
+        wsdl_url = vim_util.get_wsdl_url("https", "www.example.com")
+        url = vim_util.get_soap_url("https", "www.example.com")
+        self.assertEqual("https://www.example.com/sdk/vimService.wsdl",
+                         wsdl_url)
+        self.assertEqual("https://www.example.com/sdk", url)
+
+    def test_configure_without_wsdl_loc_override_using_ipv6(self):
+        # Same as above but with ipv6 based host ip
+        wsdl_url = vim_util.get_wsdl_url("https", "::1")
+        url = vim_util.get_soap_url("https", "::1")
+        self.assertEqual("https://[::1]/sdk/vimService.wsdl",
+                         wsdl_url)
+        self.assertEqual("https://[::1]/sdk", url)

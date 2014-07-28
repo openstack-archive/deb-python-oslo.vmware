@@ -31,7 +31,9 @@ FILE_ALREADY_EXISTS = 'FileAlreadyExists'
 FILE_FAULT = 'FileFault'
 FILE_LOCKED = 'FileLocked'
 FILE_NOT_FOUND = 'FileNotFound'
+INVALID_POWER_STATE = 'InvalidPowerState'
 INVALID_PROPERTY = 'InvalidProperty'
+NO_PERMISSION = 'NoPermission'
 NOT_AUTHENTICATED = 'NotAuthenticated'
 
 
@@ -39,7 +41,13 @@ class VimException(Exception):
     """The base exception class for all exceptions this library raises."""
 
     def __init__(self, message, cause=None):
-        self.msg = message
+        Exception.__init__(self)
+        if isinstance(message, list):
+            # we need this to protect against developers using
+            # this method like VimFaultException
+            raise ValueError(_("exception_summary must not be a list"))
+
+        self.msg = str(message)
         self.cause = cause
 
     def __str__(self):
@@ -67,14 +75,19 @@ class VimAttributeException(VimException):
 class VimFaultException(VimException):
     """Exception thrown when there are faults during VIM API calls."""
 
-    def __init__(self, fault_list, message, cause=None):
+    def __init__(self, fault_list, message, cause=None, details=None):
         super(VimFaultException, self).__init__(message, cause)
+        if not isinstance(fault_list, list):
+            raise ValueError(_("fault_list must be a list"))
         self.fault_list = fault_list
+        self.details = details
 
     def __str__(self):
         descr = VimException.__str__(self)
         if self.fault_list:
             descr += '\nFaults: ' + str(self.fault_list)
+        if self.details:
+            descr += '\nDetails: ' + str(self.details)
         return descr
 
 
@@ -105,43 +118,76 @@ class VMwareDriverException(Exception):
                 # log the issue and the kwargs
                 LOG.exception(_('Exception in string format operation'))
                 for name, value in six.iteritems(kwargs):
-                    LOG.error("%s: %s" % (name, value))
+                    LOG.error("%(name)s: %(value)s",
+                              {'name': name, 'value': value})
                 # at least get the core message out if something happened
                 message = self.msg_fmt
 
         super(VMwareDriverException, self).__init__(message)
 
 
+class VMwareDriverConfigurationException(VMwareDriverException):
+    """Base class for all configuration exceptions.
+    """
+    msg_fmt = _("VMware Driver configuration fault.")
+
+
+class UseLinkedCloneConfigurationFault(VMwareDriverConfigurationException):
+    msg_fmt = _("No default value for use_linked_clone found.")
+
+
+class MissingParameter(VMwareDriverException):
+    msg_fmt = _("Missing parameter : %(param)s")
+
+
 class AlreadyExistsException(VMwareDriverException):
     msg_fmt = _("Resource already exists.")
+    code = 409
 
 
 class CannotDeleteFileException(VMwareDriverException):
     msg_fmt = _("Cannot delete file.")
+    code = 403
 
 
 class FileAlreadyExistsException(VMwareDriverException):
     msg_fmt = _("File already exists.")
+    code = 409
 
 
 class FileFaultException(VMwareDriverException):
     msg_fmt = _("File fault.")
+    code = 409
 
 
 class FileLockedException(VMwareDriverException):
     msg_fmt = _("File locked.")
+    code = 403
 
 
 class FileNotFoundException(VMwareDriverException):
     msg_fmt = _("File not found.")
+    code = 404
+
+
+class InvalidPowerStateException(VMwareDriverException):
+    msg_fmt = _("Invalid power state.")
+    code = 409
 
 
 class InvalidPropertyException(VMwareDriverException):
     msg_fmt = _("Invalid property.")
+    code = 400
+
+
+class NoPermissionException(VMwareDriverException):
+    msg_fmt = _("No Permission.")
+    code = 403
 
 
 class NotAuthenticatedException(VMwareDriverException):
     msg_fmt = _("Not Authenticated.")
+    code = 403
 
 
 # Populate the fault registry with the exceptions that have
@@ -153,7 +199,9 @@ _fault_classes_registry = {
     FILE_FAULT: FileFaultException,
     FILE_LOCKED: FileLockedException,
     FILE_NOT_FOUND: FileNotFoundException,
+    INVALID_POWER_STATE: InvalidPowerStateException,
     INVALID_PROPERTY: InvalidPropertyException,
+    NO_PERMISSION: NoPermissionException,
     NOT_AUTHENTICATED: NotAuthenticatedException,
 }
 
@@ -163,6 +211,6 @@ def get_fault_class(name):
     name = str(name)
     fault_class = _fault_classes_registry.get(name)
     if not fault_class:
-        LOG.debug(_('Fault %s not matched.'), name)
+        LOG.debug('Fault %s not matched.', name)
         fault_class = VMwareDriverException
     return fault_class

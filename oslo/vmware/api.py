@@ -27,6 +27,7 @@ import six
 
 from oslo.vmware.common import loopingcall
 from oslo.vmware import exceptions
+from oslo.vmware.openstack.common import excutils
 from oslo.vmware.openstack.common.gettextutils import _
 from oslo.vmware import pbm
 from oslo.vmware import vim
@@ -78,44 +79,47 @@ class RetryDecorator(object):
         def _func(*args, **kwargs):
             func_name = f.__name__
             try:
-                LOG.debug(_("Invoking %(func_name)s; retry count is "
-                            "%(retry_count)d."),
+                LOG.debug("Invoking %(func_name)s; retry count is "
+                          "%(retry_count)d.",
                           {'func_name': func_name,
                            'retry_count': self._retry_count})
                 result = f(*args, **kwargs)
-                LOG.debug(_("Function %(func_name)s returned successfully "
-                            "after %(retry_count)d retries."),
+                LOG.debug("Function %(func_name)s returned successfully "
+                          "after %(retry_count)d retries.",
                           {'func_name': func_name,
                            'retry_count': self._retry_count})
-            except self._exceptions as excep:
-                LOG.warn(_("Exception which is in the suggested list of "
-                           "exceptions occurred while invoking function:"
-                           " %s."),
-                         func_name,
-                         exc_info=True)
-                if (self._max_retry_count != -1 and
-                        self._retry_count >= self._max_retry_count):
-                    LOG.error(_("Cannot retry upon suggested exception since "
-                                "retry count (%(retry_count)d) reached "
-                                "max retry count (%(max_retry_count)d)."),
-                              {'retry_count': self._retry_count,
-                               'max_retry_count': self._max_retry_count})
-                    raise excep
-                else:
-                    self._retry_count += 1
-                    self._sleep_time += self._inc_sleep_time
-                    return self._sleep_time
-            except Exception as excep:
-                LOG.exception(_("Exception which is not in the suggested list "
-                                "of exceptions occurred while invoking %s."),
-                              func_name)
-                raise excep
+            except self._exceptions:
+                with excutils.save_and_reraise_exception() as ctxt:
+                    LOG.warn(_("Exception which is in the suggested list of "
+                               "exceptions occurred while invoking function:"
+                               " %s."),
+                             func_name,
+                             exc_info=True)
+                    if (self._max_retry_count != -1 and
+                            self._retry_count >= self._max_retry_count):
+                        LOG.error(_("Cannot retry upon suggested exception "
+                                    "since retry count (%(retry_count)d) "
+                                    "reached max retry count "
+                                    "(%(max_retry_count)d)."),
+                                  {'retry_count': self._retry_count,
+                                   'max_retry_count': self._max_retry_count})
+                    else:
+                        ctxt.reraise = False
+                        self._retry_count += 1
+                        self._sleep_time += self._inc_sleep_time
+                        return self._sleep_time
+            except Exception:
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(_("Exception which is not in the "
+                                    "suggested list of exceptions occurred "
+                                    "while invoking %s."),
+                                  func_name)
             raise loopingcall.LoopingCallDone(result)
 
         def func(*args, **kwargs):
             loop = loopingcall.DynamicLoopingCall(_func, *args, **kwargs)
             evt = loop.start(periodic_interval_max=self._max_sleep_time)
-            LOG.debug(_("Waiting for function %s to return."), f.__name__)
+            LOG.debug("Waiting for function %s to return.", f.__name__)
             return evt.wait()
 
         return func
@@ -125,18 +129,21 @@ class VMwareAPISession(object):
     """Setup a session with the server and handles all calls made to it.
 
     Example:
-        api_session = VMwareAPISession('10.1.2.3', 'administrator', 'password',
-                                       10, 0.1, create_session=False)
+        api_session = VMwareAPISession('10.1.2.3', 'administrator',
+                                       'password', 10, 0.1,
+                                       create_session=False, port=443)
         result = api_session.invoke_api(vim_util, 'get_objects',
                                         api_session.vim, 'HostSystem', 100)
     """
 
     def __init__(self, host, server_username, server_password,
                  api_retry_count, task_poll_interval, scheme='https',
-                 create_session=True, wsdl_loc=None, pbm_wsdl_loc=None):
+                 create_session=True, wsdl_loc=None, pbm_wsdl_loc=None,
+                 port=443):
         """Initializes the API session with given parameters.
 
-        :param host: ESX/VC server IP address[:port] or host name[:port]
+        :param host: ESX/VC server IP address or host name
+        :param port: port for connection
         :param server_username: username of ESX/VC server admin user
         :param server_password: password for param server_username
         :param api_retry_count: number of times an API must be retried upon
@@ -152,6 +159,7 @@ class VMwareAPISession(object):
                  VimSessionOverLoadException
         """
         self._host = host
+        self._port = port
         self._server_username = server_username
         self._server_password = server_password
         self._api_retry_count = api_retry_count
@@ -171,6 +179,7 @@ class VMwareAPISession(object):
         if not self._vim:
             self._vim = vim.Vim(protocol=self._scheme,
                                 host=self._host,
+                                port=self._port,
                                 wsdl_loc=self._vim_wsdl_loc)
         return self._vim
 
@@ -179,7 +188,8 @@ class VMwareAPISession(object):
         if not self._pbm and self._pbm_wsdl_loc:
             self._pbm = pbm.PBMClient(self._pbm_wsdl_loc,
                                       protocol=self._scheme,
-                                      host=self._host)
+                                      host=self._host,
+                                      port=self._port)
             if self._session_id:
                 # To handle the case where pbm property is accessed after
                 # session creation. If pbm property is accessed before session
@@ -192,7 +202,7 @@ class VMwareAPISession(object):
         """Establish session with the server."""
         session_manager = self.vim.service_content.sessionManager
         # Login and create new session with the server for making API calls.
-        LOG.debug(_("Logging in with username = %s."), self._server_username)
+        LOG.debug("Logging in with username = %s.", self._server_username)
         session = self.vim.Login(session_manager,
                                  userName=self._server_username,
                                  password=self._server_password)
@@ -229,7 +239,7 @@ class VMwareAPISession(object):
         if self._pbm is not None:
             self._pbm.set_cookie(self._get_session_cookie())
 
-    def __del__(self):
+    def logout(self):
         """Log out and terminate the current session."""
         if self._session_id:
             LOG.info(_("Logging out and terminating the current session with "
@@ -237,13 +247,14 @@ class VMwareAPISession(object):
                      self._session_id)
             try:
                 self.vim.Logout(self.vim.service_content.sessionManager)
+                self._session_id = None
             except Exception:
                 LOG.exception(_("Error occurred while logging out and "
                                 "terminating the current session with "
                                 "ID = %s."),
                               self._session_id)
         else:
-            LOG.debug(_("No session exists to log out."))
+            LOG.debug("No session exists to log out.")
 
     def invoke_api(self, module, method, *args, **kwargs):
         """Wrapper method for invoking APIs.
@@ -265,7 +276,7 @@ class VMwareAPISession(object):
                         exceptions=(exceptions.VimSessionOverLoadException,
                                     exceptions.VimConnectionException))
         def _invoke_api(module, method, *args, **kwargs):
-            LOG.debug(_("Invoking method %(module)s.%(method)s."),
+            LOG.debug("Invoking method %(module)s.%(method)s.",
                       {'module': module,
                        'method': method})
             try:
@@ -283,8 +294,8 @@ class VMwareAPISession(object):
                     # case of an inactive session. Therefore, we need a way to
                     # differentiate between these two cases.
                     if self._is_current_session_active():
-                        LOG.debug(_("Returning empty response for "
-                                    "%(module)s.%(method)s invocation."),
+                        LOG.debug("Returning empty response for "
+                                  "%(module)s.%(method)s invocation.",
                                   {'module': module,
                                    'method': method})
                         return []
@@ -306,19 +317,20 @@ class VMwareAPISession(object):
                     # InvalidArgument
                     # Raise specific exceptions here if possible
                     if excep.fault_list:
-                        LOG.debug(_("Fault list: %s"), excep.fault_list)
+                        LOG.debug("Fault list: %s", excep.fault_list)
                         raise exceptions.get_fault_class(excep.fault_list[0])
                     raise
 
             except exceptions.VimConnectionException:
-                # Re-create the session during connection exception.
-                LOG.warn(_("Re-creating session due to connection problems "
-                           "while invoking method %(module)s.%(method)s."),
-                         {'module': module,
-                          'method': method},
-                         exc_info=True)
-                self._create_session()
-                raise
+                with excutils.save_and_reraise_exception():
+                    # Re-create the session during connection exception.
+                    LOG.warn(_("Re-creating session due to connection "
+                               "problems while invoking method "
+                               "%(module)s.%(method)s."),
+                             {'module': module,
+                              'method': method},
+                             exc_info=True)
+                    self._create_session()
 
         return _invoke_api(module, method, *args, **kwargs)
 
@@ -327,7 +339,7 @@ class VMwareAPISession(object):
 
         :returns: True if the session is active; False otherwise
         """
-        LOG.debug(_("Checking if the current session: %s is active."),
+        LOG.debug("Checking if the current session: %s is active.",
                   self._session_id)
 
         is_active = False
@@ -358,7 +370,7 @@ class VMwareAPISession(object):
         """
         loop = loopingcall.FixedIntervalLoopingCall(self._poll_task, task)
         evt = loop.start(self._task_poll_interval)
-        LOG.debug(_("Waiting for the task: %s to complete."), task)
+        LOG.debug("Waiting for the task: %s to complete.", task)
         return evt.wait()
 
     def _poll_task(self, task):
@@ -370,25 +382,26 @@ class VMwareAPISession(object):
 
         :param task: managed object reference of the task
         """
-        LOG.debug(_("Invoking VIM API to read info of task: %s."), task)
+        LOG.debug("Invoking VIM API to read info of task: %s.", task)
         try:
             task_info = self.invoke_api(vim_util,
                                         'get_object_property',
                                         self.vim,
                                         task,
                                         'info')
-        except exceptions.VimException as excep:
-            LOG.exception(_("Error occurred while reading info of task: %s."),
-                          task)
-            raise excep
+        except exceptions.VimException:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_("Error occurred while reading info of "
+                                "task: %s."),
+                              task)
         else:
             if task_info.state in ['queued', 'running']:
                 if hasattr(task_info, 'progress'):
-                    LOG.debug(_("Task: %(task)s progress is %(progress)s%%."),
+                    LOG.debug("Task: %(task)s progress is %(progress)s%%.",
                               {'task': task,
                                'progress': task_info.progress})
             elif task_info.state == 'success':
-                LOG.debug(_("Task: %s status is success."), task)
+                LOG.debug("Task: %s status is success.", task)
                 raise loopingcall.LoopingCallDone(task_info)
             else:
                 error_msg = six.text_type(task_info.error.localizedMessage)
@@ -413,7 +426,7 @@ class VMwareAPISession(object):
         """
         loop = loopingcall.FixedIntervalLoopingCall(self._poll_lease, lease)
         evt = loop.start(self._task_poll_interval)
-        LOG.debug(_("Waiting for the lease: %s to be ready."), lease)
+        LOG.debug("Waiting for the lease: %s to be ready.", lease)
         evt.wait()
 
     def _poll_lease(self, lease):
@@ -424,26 +437,26 @@ class VMwareAPISession(object):
 
         :param lease: lease whose state is to be polled
         """
-        LOG.debug(_("Invoking VIM API to read state of lease: %s."), lease)
+        LOG.debug("Invoking VIM API to read state of lease: %s.", lease)
         try:
             state = self.invoke_api(vim_util,
                                     'get_object_property',
                                     self.vim,
                                     lease,
                                     'state')
-        except exceptions.VimException as excep:
-            LOG.exception(_("Error occurred while checking state of lease: "
-                            "%s."),
-                          lease)
-            raise excep
+        except exceptions.VimException:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_("Error occurred while checking "
+                                "state of lease: %s."),
+                              lease)
         else:
             if state == 'ready':
-                LOG.debug(_("Lease: %s is ready."), lease)
+                LOG.debug("Lease: %s is ready.", lease)
                 raise loopingcall.LoopingCallDone()
             elif state == 'initializing':
-                LOG.debug(_("Lease: %s is initializing."), lease)
+                LOG.debug("Lease: %s is initializing.", lease)
             elif state == 'error':
-                LOG.debug(_("Invoking VIM API to read lease: %s error."),
+                LOG.debug("Invoking VIM API to read lease: %s error.",
                           lease)
                 error_msg = self._get_error_message(lease)
                 excep_msg = _("Lease: %(lease)s is in error state. Details: "

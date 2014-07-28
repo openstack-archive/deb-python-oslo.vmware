@@ -24,7 +24,6 @@ import logging
 import suds
 import suds.sax.element as element
 
-from oslo.vmware.openstack.common.gettextutils import _
 from oslo.vmware import vim
 from oslo.vmware import vim_util
 
@@ -38,14 +37,16 @@ LOG = logging.getLogger(__name__)
 class PBMClient(vim.Vim):
     """SOAP based PBM client."""
 
-    def __init__(self, pbm_wsdl_loc, protocol='https', host='localhost'):
+    def __init__(self, pbm_wsdl_loc, protocol='https', host='localhost',
+                 port=443):
         """Constructs a PBM client object.
 
         :param pbm_wsdl_loc: PBM WSDL file location
         :param protocol: http or https
-        :param host: server IP address[:port] or host name[:port]
+        :param host: server IP address or host name
+        :param port: port for connection
         """
-        self._url = vim_util.get_soap_url(protocol, host, 'pbm')
+        self._url = vim_util.get_soap_url(protocol, host, port, 'pbm')
         self._pbm_client = suds.client.Client(pbm_wsdl_loc, location=self._url)
         self._pbm_service_content = None
 
@@ -77,22 +78,24 @@ def get_all_profiles(session):
     :raises: VimException, VimFaultException, VimAttributeException,
              VimSessionOverLoadException, VimConnectionException
     """
-    LOG.debug(_("Fetching all the profiles defined in VC server."))
+    LOG.debug("Fetching all the profiles defined in VC server.")
 
     pbm = session.pbm
     profile_manager = pbm.service_content.profileManager
     res_type = pbm.client.factory.create('ns0:PbmProfileResourceType')
     res_type.resourceType = 'STORAGE'
-
+    profiles = []
     profile_ids = session.invoke_api(pbm,
                                      'PbmQueryProfile',
                                      profile_manager,
                                      resourceType=res_type)
-    LOG.debug(_("Fetched profile IDs: %s."), profile_ids)
-    return session.invoke_api(pbm,
-                              'PbmRetrieveContent',
-                              profile_manager,
-                              profileIds=profile_ids)
+    LOG.debug("Fetched profile IDs: %s.", profile_ids)
+    if profile_ids:
+        profiles = session.invoke_api(pbm,
+                                      'PbmRetrieveContent',
+                                      profile_manager,
+                                      profileIds=profile_ids)
+    return profiles
 
 
 def get_profile_id_by_name(session, profile_name):
@@ -103,11 +106,11 @@ def get_profile_id_by_name(session, profile_name):
     :raises: VimException, VimFaultException, VimAttributeException,
              VimSessionOverLoadException, VimConnectionException
     """
-    LOG.debug(_("Retrieving profile ID for profile: %s."), profile_name)
+    LOG.debug("Retrieving profile ID for profile: %s.", profile_name)
     for profile in get_all_profiles(session):
         if profile.name == profile_name:
             profile_id = profile.profileId
-            LOG.debug(_("Retrieved profile ID: %(id)s for profile: %(name)s."),
+            LOG.debug("Retrieved profile ID: %(id)s for profile: %(name)s.",
                       {'id': profile_id,
                        'name': profile_name})
             return profile_id
@@ -123,7 +126,7 @@ def filter_hubs_by_profile(session, hubs, profile_id):
     :raises: VimException, VimFaultException, VimAttributeException,
              VimSessionOverLoadException, VimConnectionException
     """
-    LOG.debug(_("Filtering hubs: %(hubs)s that match profile: %(profile)s."),
+    LOG.debug("Filtering hubs: %(hubs)s that match profile: %(profile)s.",
               {'hubs': hubs,
                'profile': profile_id})
 
@@ -134,7 +137,7 @@ def filter_hubs_by_profile(session, hubs, profile_id):
                                        placement_solver,
                                        hubsToSearch=hubs,
                                        profile=profile_id)
-    LOG.debug(_("Filtered hubs: %s"), filtered_hubs)
+    LOG.debug("Filtered hubs: %s", filtered_hubs)
     return filtered_hubs
 
 

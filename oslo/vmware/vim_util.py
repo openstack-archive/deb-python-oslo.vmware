@@ -87,6 +87,12 @@ def build_recursive_traversal_spec(client_factory):
                                      'vmFolder',
                                      False,
                                      [visit_folders_select_spec])
+    dc_to_netf = build_traversal_spec(client_factory,
+                                      'dc_to_netf',
+                                      'Datacenter',
+                                      'networkFolder',
+                                      False,
+                                      [visit_folders_select_spec])
 
     # Next hop from HostSystem
     h_to_vm = build_traversal_spec(client_factory,
@@ -168,6 +174,7 @@ def build_recursive_traversal_spec(client_factory):
                                            h_to_vm,
                                            dc_to_hf,
                                            dc_to_vmf,
+                                           dc_to_netf,
                                            cr_to_ds,
                                            cr_to_h,
                                            cr_to_rp,
@@ -368,14 +375,32 @@ def get_object_property(vim, moref, property_name):
     return prop_val
 
 
-def get_soap_url(protocol, host, path='sdk'):
+def get_wsdl_url(protocol, host, port=None):
+    """Get the default WSDL file location hosted at the server.
+
+    :param protocol: http or https
+    :param host: server IP address or host name
+    :param port: port for connection
+    :returns: default WSDL file location hosted at the server
+    """
+    return get_soap_url(protocol, host, port) + "/vimService.wsdl"
+
+
+def get_soap_url(protocol, host, port=None, path='sdk'):
     """Return ESX/VC server's SOAP service URL.
 
     :param protocol: https or http
-    :param host: server IP address[:port] or host name[:port]
+    :param host: server IP address or host name
+    :param port: port for connection
     :param path: path part of the SOAP URL
     :returns: SOAP service URL
     """
     if netaddr.valid_ipv6(host):
-        return '%s://[%s]/%s' % (protocol, host, path)
-    return '%s://%s/%s' % (protocol, host, path)
+        if port is None:
+            return '%s://[%s]/%s' % (protocol, host, path)
+        else:
+            return '%s://[%s]:%d/%s' % (protocol, host, port, path)
+    if port is None:
+        return '%s://%s/%s' % (protocol, host, path)
+    else:
+        return '%s://%s:%d/%s' % (protocol, host, port, path)

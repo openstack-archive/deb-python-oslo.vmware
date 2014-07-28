@@ -25,6 +25,7 @@ import suds
 
 from oslo.vmware import exceptions
 from oslo.vmware import vim
+from oslo.vmware import vim_util
 from tests import base
 
 
@@ -130,11 +131,19 @@ class VimTest(base.TestCase):
         def side_effect(mo, **kwargs):
             self.assertEqual(managed_object, mo._type)
             self.assertEqual(managed_object, mo.value)
-            doc = mock.Mock()
-            detail = doc.childAtPath.return_value
+            fault_string = mock.Mock()
+            fault_string.getText.return_value = "MyFault"
+
+            fault_children = mock.Mock()
+            fault_children.name = "name"
+            fault_children.getText.return_value = "value"
             child = mock.Mock()
             child.get.return_value = fault_list[0]
+            child.getChildren.return_value = [fault_children]
+            detail = mock.Mock()
             detail.getChildren.return_value = [child]
+            doc = mock.Mock()
+            doc.childAtPath = mock.Mock(side_effect=[fault_string, detail])
             raise suds.WebFault(None, doc)
 
         vim_obj = vim.Vim()
@@ -146,6 +155,8 @@ class VimTest(base.TestCase):
             vim_obj.powerOn(managed_object)
         except exceptions.VimFaultException as ex:
             self.assertEqual(fault_list, ex.fault_list)
+            self.assertEqual({'name': 'value'}, ex.details)
+            self.assertEqual("MyFault", ex.msg)
 
     def test_vim_request_handler_with_attribute_error(self):
         managed_object = 'VirtualMachine'
@@ -231,6 +242,13 @@ class VimTest(base.TestCase):
         self.assertRaises(exceptions.VimConnectionException,
                           lambda: vim_obj.powerOn(managed_object))
 
+    @mock.patch.object(vim_util, 'get_moref', return_value=None)
+    def test_vim_request_handler_no_value(self, mock_moref):
+        managed_object = 'VirtualMachine'
+        vim_obj = vim.Vim()
+        ret = vim_obj.UnregisterVM(managed_object)
+        self.assertIsNone(ret)
+
     def _test_vim_request_handler_with_exception(self, message, exception):
         managed_object = 'VirtualMachine'
 
@@ -260,3 +278,58 @@ class VimTest(base.TestCase):
     def test_vim_request_handler_with_generic_error(self):
         self._test_vim_request_handler_with_exception(
             'GENERIC_ERROR', exceptions.VimException)
+
+    def test_exception_summary_exception_as_list(self):
+        # assert that if a list is fed to the VimException object
+        # that it will error.
+        self.assertRaises(ValueError,
+                          exceptions.VimException,
+                          [], ValueError('foo'))
+
+    def test_exception_summary_string(self):
+        e = exceptions.VimException("string", ValueError("foo"))
+        string = str(e)
+        self.assertEqual("string\nCause: foo", string)
+
+    def test_vim_fault_exception_string(self):
+        self.assertRaises(ValueError,
+                          exceptions.VimFaultException,
+                          "bad", ValueError("argument"))
+
+    def test_vim_fault_exception(self):
+        vfe = exceptions.VimFaultException([ValueError("example")], "cause")
+        string = str(vfe)
+        self.assertEqual("cause\nFaults: [ValueError('example',)]", string)
+
+    def test_vim_fault_exception_with_cause_and_details(self):
+        vfe = exceptions.VimFaultException([ValueError("example")],
+                                           "MyMessage",
+                                           "FooBar",
+                                           {'foo': 'bar'})
+        string = str(vfe)
+        self.assertEqual("MyMessage\n"
+                         "Cause: FooBar\n"
+                         "Faults: [ValueError('example',)]\n"
+                         "Details: {'foo': 'bar'}",
+                         string)
+
+    def test_configure_non_default_host_port(self):
+        vim_obj = vim.Vim('https', 'www.test.com', 12345)
+        self.assertEqual('https://www.test.com:12345/sdk/vimService.wsdl',
+                         vim_obj.wsdl_url)
+        self.assertEqual('https://www.test.com:12345/sdk',
+                         vim_obj.soap_url)
+
+    def test_configure_ipv6(self):
+        vim_obj = vim.Vim('https', '::1')
+        self.assertEqual('https://[::1]/sdk/vimService.wsdl',
+                         vim_obj.wsdl_url)
+        self.assertEqual('https://[::1]/sdk',
+                         vim_obj.soap_url)
+
+    def test_configure_ipv6_and_non_default_host_port(self):
+        vim_obj = vim.Vim('https', '::1', 12345)
+        self.assertEqual('https://[::1]:12345/sdk/vimService.wsdl',
+                         vim_obj.wsdl_url)
+        self.assertEqual('https://[::1]:12345/sdk',
+                         vim_obj.soap_url)

@@ -68,32 +68,44 @@ class VimMessagePlugin(suds.plugin.MessagePlugin):
 class Vim(object):
     """VIM API Client."""
 
-    def __init__(self, protocol='https', host='localhost', wsdl_loc=None):
+    def __init__(self, protocol='https', host='localhost', port=None,
+                 wsdl_loc=None):
         """Create communication interfaces for initiating SOAP transactions.
 
         :param protocol: http or https
-        :param host: server IP address[:port] or host name[:port]
+        :param host: server IP address or host name
+        :param port: port for connection
         :param wsdl_loc: WSDL file location
         :raises: VimException, VimFaultException, VimAttributeException,
                  VimSessionOverLoadException, VimConnectionException
         """
         if not wsdl_loc:
-            wsdl_loc = Vim._get_wsdl_loc(protocol, host)
-        soap_url = vim_util.get_soap_url(protocol, host)
+            wsdl_loc = Vim._get_wsdl_loc(protocol, host, port)
+        self._wsdl_loc = wsdl_loc
+        self._soap_url = vim_util.get_soap_url(protocol, host, port)
         self._client = suds.client.Client(wsdl_loc,
-                                          location=soap_url,
+                                          location=self._soap_url,
                                           plugins=[VimMessagePlugin()])
         self._service_content = self.RetrieveServiceContent('ServiceInstance')
 
     @staticmethod
-    def _get_wsdl_loc(protocol, host):
+    def _get_wsdl_loc(protocol, host, port):
         """Get the default WSDL file location hosted at the server.
 
         :param protocol: http or https
-        :param host: server IP address[:port] or host name[:port]
+        :param host: server IP address or host name
+        :param port: port for connection
         :returns: default WSDL file location hosted at the server
         """
-        return '%s://%s/sdk/vimService.wsdl' % (protocol, host)
+        return vim_util.get_wsdl_url(protocol, host, port)
+
+    @property
+    def wsdl_url(self):
+        return self._wsdl_loc
+
+    @property
+    def soap_url(self):
+        return self._soap_url
 
     @property
     def service_content(self):
@@ -114,7 +126,7 @@ class Vim(object):
         :param response: response from RetrievePropertiesEx API call
         :raises: VimFaultException
         """
-        LOG.debug(_("Checking RetrievePropertiesEx API response for faults."))
+        LOG.debug("Checking RetrievePropertiesEx API response for faults.")
         fault_list = []
         if not response:
             # This is the case when the session has timed out. ESX SOAP
@@ -124,8 +136,8 @@ class Vim(object):
             # session. It is as bad as a terminated session for we cannot
             # use the session. Therefore setting fault to NotAuthenticated
             # fault.
-            LOG.debug(_("RetrievePropertiesEx API response is empty; setting "
-                        "fault to %s."),
+            LOG.debug("RetrievePropertiesEx API response is empty; setting "
+                      "fault to %s.",
                       exceptions.NOT_AUTHENTICATED)
             fault_list = [exceptions.NOT_AUTHENTICATED]
         else:
@@ -141,7 +153,7 @@ class Vim(object):
             raise exceptions.VimFaultException(fault_list,
                                                _("Error occurred while calling"
                                                  " RetrievePropertiesEx."))
-        LOG.debug(_("No faults found in RetrievePropertiesEx API response."))
+        LOG.debug("No faults found in RetrievePropertiesEx API response.")
 
     def __getattr__(self, attr_name):
         """Returns the method to invoke API identified by param attr_name."""
@@ -165,15 +177,17 @@ class Vim(object):
                     # of the managed object.
                     managed_object = vim_util.get_moref(managed_object,
                                                         managed_object)
+                if managed_object is None:
+                    return
                 request = getattr(self.client.service, attr_name)
-                LOG.debug(_("Invoking %(attr_name)s on %(moref)s."),
+                LOG.debug("Invoking %(attr_name)s on %(moref)s.",
                           {'attr_name': attr_name,
                            'moref': managed_object})
                 response = request(managed_object, **kwargs)
                 if (attr_name.lower() == 'retrievepropertiesex'):
                     Vim._retrieve_properties_ex_fault_checker(response)
-                LOG.debug(_("Invocation of %(attr_name)s on %(moref)s "
-                            "completed successfully."),
+                LOG.debug("Invocation of %(attr_name)s on %(moref)s "
+                          "completed successfully.",
                           {'attr_name': attr_name,
                            'moref': managed_object})
                 return response
@@ -184,13 +198,18 @@ class Vim(object):
 
             except suds.WebFault as excep:
                 doc = excep.document
+                fault_string = doc.childAtPath("/Envelope/Body/Fault/"
+                                               "faultstring").getText()
                 detail = doc.childAtPath('/Envelope/Body/Fault/detail')
                 fault_list = []
+                details = {}
                 if detail:
-                    for child in detail.getChildren():
-                        fault_list.append(child.get('type'))
-                raise exceptions.VimFaultException(
-                    fault_list, _("Web fault in %s.") % attr_name, excep)
+                    for fault in detail.getChildren():
+                        fault_list.append(fault.get("type"))
+                        for child in fault.getChildren():
+                            details[child.name] = child.getText()
+                raise exceptions.VimFaultException(fault_list, fault_string,
+                                                   excep, details)
 
             except AttributeError as excep:
                 raise exceptions.VimAttributeException(
