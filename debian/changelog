@@ -2,6 +2,7 @@ python-oslo.vmware (0.6.0-1) experimental; urgency=medium
 
   * New upstream release.
   * Uploading to Experimental right before the freeze.
+  * Patches doc/source/conf.py which is failing the sphinx doc build.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 17 Sep 2014 13:43:21 +0800
 
