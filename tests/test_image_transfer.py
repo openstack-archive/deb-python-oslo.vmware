@@ -61,10 +61,16 @@ class BlockingQueueTest(base.TestCase):
         exp_calls = [mock.call([1])] * write_count
         self.assertEqual(exp_calls, queue.put.call_args_list)
 
-    def test_tell(self):
-        max_transfer_size = 30
+    def test_seek(self):
         queue = image_transfer.BlockingQueue(10, 30)
-        self.assertEqual(max_transfer_size, queue.tell())
+        self.assertRaises(IOError, queue.seek, 5)
+
+    def test_tell(self):
+        queue = image_transfer.BlockingQueue(10, 30)
+        self.assertEqual(0, queue.tell())
+        queue.get = mock.Mock(return_value=[1] * 10)
+        queue.read(10)
+        self.assertEqual(10, queue.tell())
 
 
 class ImageWriterTest(base.TestCase):
@@ -451,6 +457,35 @@ class ImageTransferUtilityTest(base.TestCase):
             vm_folder=vm_folder,
             vm_import_spec=vm_import_spec,
             image_size=image_size)
+
+    @mock.patch.object(image_transfer, '_start_transfer')
+    @mock.patch('oslo.vmware.rw_handles.VmdkReadHandle')
+    def test_copy_stream_optimized_disk(
+            self, vmdk_read_handle, start_transfer):
+
+        read_handle = mock.sentinel.read_handle
+        vmdk_read_handle.return_value = read_handle
+
+        context = mock.sentinel.context
+        timeout = mock.sentinel.timeout
+        write_handle = mock.Mock(name='/cinder/images/tmpAbcd.vmdk')
+        session = mock.sentinel.session
+        host = mock.sentinel.host
+        port = mock.sentinel.port
+        vm = mock.sentinel.vm
+        vmdk_file_path = mock.sentinel.vmdk_file_path
+        vmdk_size = mock.sentinel.vmdk_size
+
+        image_transfer.copy_stream_optimized_disk(
+            context, timeout, write_handle, session=session, host=host,
+            port=port, vm=vm, vmdk_file_path=vmdk_file_path,
+            vmdk_size=vmdk_size)
+
+        vmdk_read_handle.assert_called_once_with(
+            session, host, port, vm, vmdk_file_path, vmdk_size)
+        start_transfer.assert_called_once_with(
+            context, timeout, read_handle, vmdk_size,
+            write_file_handle=write_handle)
 
     @mock.patch('oslo.vmware.rw_handles.VmdkReadHandle')
     @mock.patch.object(image_transfer, '_start_transfer')

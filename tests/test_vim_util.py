@@ -293,17 +293,29 @@ class VimUtilTest(base.TestCase):
         get_object_properties.assert_called_once_with(
             vim, moref, [property_name])
 
-    def test_configure_without_wsdl_loc_override(self):
-        wsdl_url = vim_util.get_wsdl_url("https", "www.example.com")
-        url = vim_util.get_soap_url("https", "www.example.com")
-        self.assertEqual("https://www.example.com/sdk/vimService.wsdl",
-                         wsdl_url)
-        self.assertEqual("https://www.example.com/sdk", url)
+    def test_find_extension(self):
+        vim = mock.Mock()
+        ret = vim_util.find_extension(vim, 'fake-key')
+        self.assertIsNotNone(ret)
+        service_content = vim.service_content
+        vim.client.service.FindExtension.assert_called_once_with(
+            service_content.extensionManager, 'fake-key')
 
-    def test_configure_without_wsdl_loc_override_using_ipv6(self):
-        # Same as above but with ipv6 based host ip
-        wsdl_url = vim_util.get_wsdl_url("https", "::1")
-        url = vim_util.get_soap_url("https", "::1")
-        self.assertEqual("https://[::1]/sdk/vimService.wsdl",
-                         wsdl_url)
-        self.assertEqual("https://[::1]/sdk", url)
+    def test_register_extension(self):
+        vim = mock.Mock()
+        ret = vim_util.register_extension(vim, 'fake-key', 'fake-type')
+        self.assertIsNone(ret)
+        service_content = vim.service_content
+        vim.client.service.RegisterExtension.assert_called_once_with(
+            service_content.extensionManager, mock.ANY)
+
+    def test_get_vc_version(self):
+        session = mock.Mock()
+        expected_version = '6.0.1'
+        session.vim.service_content.about.version = expected_version
+        version = vim_util.get_vc_version(session)
+        self.assertEqual(expected_version, version)
+        expected_version = '5.5'
+        session.vim.service_content.about.version = expected_version
+        version = vim_util.get_vc_version(session)
+        self.assertEqual(expected_version, version)

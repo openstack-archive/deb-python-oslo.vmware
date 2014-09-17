@@ -17,8 +17,9 @@
 The VMware API utility module.
 """
 
-import netaddr
 import suds
+
+from oslo.vmware.openstack.common import timeutils
 
 
 def get_moref(value, type_):
@@ -375,32 +376,50 @@ def get_object_property(vim, moref, property_name):
     return prop_val
 
 
-def get_wsdl_url(protocol, host, port=None):
-    """Get the default WSDL file location hosted at the server.
+def find_extension(vim, key):
+    """Looks for an existing extension.
 
-    :param protocol: http or https
-    :param host: server IP address or host name
-    :param port: port for connection
-    :returns: default WSDL file location hosted at the server
+    :param vim: Vim object
+    :param key: the key to search for
+    :returns: the data object Extension or None
     """
-    return get_soap_url(protocol, host, port) + "/vimService.wsdl"
+    extension_manager = vim.service_content.extensionManager
+    return vim.client.service.FindExtension(extension_manager, key)
 
 
-def get_soap_url(protocol, host, port=None, path='sdk'):
-    """Return ESX/VC server's SOAP service URL.
+def register_extension(vim, key, type, label='OpenStack',
+                       summary='OpenStack services', version='1.0'):
+    """Create a new extention.
 
-    :param protocol: https or http
-    :param host: server IP address or host name
-    :param port: port for connection
-    :param path: path part of the SOAP URL
-    :returns: SOAP service URL
+    :param vim: Vim object
+    :param key: the key for the extension
+    :param type: Managed entity type, as defined by the extension. This
+                 matches the type field in the configuration about a
+                 virtual machine or vApp
+    :param label: Display label
+    :param summary: Summary description
+    :param version: Extension version number as a dot-separated string
     """
-    if netaddr.valid_ipv6(host):
-        if port is None:
-            return '%s://[%s]/%s' % (protocol, host, path)
-        else:
-            return '%s://[%s]:%d/%s' % (protocol, host, port, path)
-    if port is None:
-        return '%s://%s/%s' % (protocol, host, path)
-    else:
-        return '%s://%s:%d/%s' % (protocol, host, port, path)
+    extension_manager = vim.service_content.extensionManager
+    client_factory = vim.client.factory
+    os_ext = client_factory.create('ns0:Extension')
+    os_ext.key = key
+    entity_info = client_factory.create('ns0:ExtManagedEntityInfo')
+    entity_info.type = type
+    os_ext.managedEntityInfo = [entity_info]
+    os_ext.version = version
+    desc = client_factory.create('ns0:Description')
+    desc.label = label
+    desc.summary = summary
+    os_ext.description = desc
+    os_ext.lastHeartbeatTime = timeutils.strtime()
+    vim.client.service.RegisterExtension(extension_manager, os_ext)
+
+
+def get_vc_version(session):
+    """Return the dot-separated vCenter version string. For example, "1.2".
+
+    :param session: vCenter soap session
+    :return: vCenter version
+    """
+    return session.vim.service_content.about.version

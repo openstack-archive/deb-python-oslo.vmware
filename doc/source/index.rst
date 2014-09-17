@@ -10,6 +10,15 @@ Contents:
    installation
    usage
    contributing
+   history
+
+Code Documentation
+==================
+
+.. toctree::
+   :maxdepth: 1
+
+   api/autoindex
 
 Indices and tables
 ==================

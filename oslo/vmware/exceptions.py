@@ -21,7 +21,7 @@ import logging
 
 import six
 
-from oslo.vmware.openstack.common.gettextutils import _
+from oslo.vmware._i18n import _, _LE
 
 LOG = logging.getLogger(__name__)
 
@@ -35,6 +35,8 @@ INVALID_POWER_STATE = 'InvalidPowerState'
 INVALID_PROPERTY = 'InvalidProperty'
 NO_PERMISSION = 'NoPermission'
 NOT_AUTHENTICATED = 'NotAuthenticated'
+TASK_IN_PROGRESS = 'TaskInProgress'
+DUPLICATE_NAME = 'DuplicateName'
 
 
 class VimException(Exception):
@@ -79,15 +81,24 @@ class VimFaultException(VimException):
         super(VimFaultException, self).__init__(message, cause)
         if not isinstance(fault_list, list):
             raise ValueError(_("fault_list must be a list"))
+        if details is not None and not isinstance(details, dict):
+            raise ValueError(_("details must be a dict"))
         self.fault_list = fault_list
         self.details = details
 
     def __str__(self):
-        descr = VimException.__str__(self)
+        return unicode(self).encode('utf8')
+
+    def __unicode__(self):
+        descr = unicode(VimException.__str__(self))
         if self.fault_list:
+            # fault_list doesn't contain non-ASCII chars, we can use str()
             descr += '\nFaults: ' + str(self.fault_list)
         if self.details:
-            descr += '\nDetails: ' + str(self.details)
+            # details may contain non-ASCII values
+            details = '{%s}' % ', '.join(["'%s': '%s'" % (k, v)
+                                         for k, v in self.details.iteritems()])
+            descr += '\nDetails: ' + details
         return descr
 
 
@@ -106,8 +117,9 @@ class VMwareDriverException(Exception):
     """
     msg_fmt = _("An unknown exception occurred.")
 
-    def __init__(self, message=None, **kwargs):
+    def __init__(self, message=None, details=None, **kwargs):
         self.kwargs = kwargs
+        self.details = details
 
         if not message:
             try:
@@ -116,9 +128,9 @@ class VMwareDriverException(Exception):
             except Exception:
                 # kwargs doesn't match a variable in the message
                 # log the issue and the kwargs
-                LOG.exception(_('Exception in string format operation'))
+                LOG.exception(_LE('Exception in string format operation'))
                 for name, value in six.iteritems(kwargs):
-                    LOG.error("%(name)s: %(value)s",
+                    LOG.error(_LE("%(name)s: %(value)s"),
                               {'name': name, 'value': value})
                 # at least get the core message out if something happened
                 message = self.msg_fmt
@@ -190,6 +202,14 @@ class NotAuthenticatedException(VMwareDriverException):
     code = 403
 
 
+class TaskInProgress(VMwareDriverException):
+    msg_fmt = _("Entity has another operation in process.")
+
+
+class DuplicateName(VMwareDriverException):
+    msg_fmt = _("Duplicate name.")
+
+
 # Populate the fault registry with the exceptions that have
 # special treatment.
 _fault_classes_registry = {
@@ -203,14 +223,26 @@ _fault_classes_registry = {
     INVALID_PROPERTY: InvalidPropertyException,
     NO_PERMISSION: NoPermissionException,
     NOT_AUTHENTICATED: NotAuthenticatedException,
+    TASK_IN_PROGRESS: TaskInProgress,
+    DUPLICATE_NAME: DuplicateName,
 }
 
 
 def get_fault_class(name):
-    """Get a named subclass of NovaException."""
+    """Get a named subclass of VMwareDriverException."""
     name = str(name)
     fault_class = _fault_classes_registry.get(name)
     if not fault_class:
         LOG.debug('Fault %s not matched.', name)
         fault_class = VMwareDriverException
     return fault_class
+
+
+def register_fault_class(name, exception):
+    fault_class = _fault_classes_registry.get(name)
+    if not issubclass(exception, VMwareDriverException):
+        raise TypeError(_("exception should be a subclass of "
+                          "VMwareDriverException"))
+    if fault_class:
+        LOG.debug('Overriding exception for %s', name)
+    _fault_classes_registry[name] = exception

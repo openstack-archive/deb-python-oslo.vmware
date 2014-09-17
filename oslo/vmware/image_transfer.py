@@ -25,8 +25,8 @@ from eventlet import greenthread
 from eventlet import queue
 from eventlet import timeout
 
+from oslo.vmware._i18n import _
 from oslo.vmware import exceptions
-from oslo.vmware.openstack.common.gettextutils import _
 from oslo.vmware import rw_handles
 
 
@@ -45,7 +45,7 @@ class BlockingQueue(queue.LightQueue):
 
         :param max_size: maximum queue size; if max_size is less than zero or
                          None, the queue size is infinite.
-        :param _max_transfer_size: maximum amount of data that can be
+        :param max_transfer_size: maximum amount of data that can be
                                   _transferred using this queue
         """
         queue.LightQueue.__init__(self, max_size)
@@ -74,27 +74,21 @@ class BlockingQueue(queue.LightQueue):
 
         :param data: data to be written
         """
-        LOG.debug("Writing %d data items into the queue.", len(data))
         self.put(data)
 
     # Below methods are provided in order to enable treating the queue
     # as a file handle.
-    # Note(vui): When file transfer size is not specified, we raise IOError to
-    # prevent incorrect predetermination of file length by readers.
 
     def seek(self, offset, whence=0):
-        if self._max_transfer_size is 0:
-            raise IOError(errno.ESPIPE, "Illegal seek")
+        """Set the file's current position at the offset.
+
+        This method throws IOError since seek cannot be supported for a pipe.
+        """
+        raise IOError(errno.ESPIPE, "Illegal seek")
 
     def tell(self):
-        """Get size of the file to be read.
-
-        We interpret _max_transfer_size=0 as stream mode and raise IOError
-        to prevent incorrect predetermination of file length by readers.
-        """
-        if self._max_transfer_size is 0:
-            raise IOError(errno.ESPIPE, "Illegal seek")
-        return self._max_transfer_size
+        """Get the current file position."""
+        return self._transferred
 
     def close(self):
         pass
@@ -181,9 +175,10 @@ class ImageWriter(object):
                         greenthread.sleep(IMAGE_SERVICE_POLL_INTERVAL)
                     else:
                         self.stop()
-                        excep_msg = _("Image: %(image)s is in unknown state: "
-                                      "%(state)s.") % {'image': self._image_id,
-                                                       'state': image_status}
+                        excep_msg = (_("Image: %(image)s is in unknown "
+                                       "state: %(state)s.") %
+                                     {'image': self._image_id,
+                                      'state': image_status})
                         LOG.error(excep_msg)
                         excep = exceptions.ImageTransferException(excep_msg)
                         self._done.send_exception(excep)
@@ -492,6 +487,35 @@ def download_stream_optimized_image(context, timeout_secs, image_service,
               "optimized file.",
               image_id)
     return imported_vm
+
+
+def copy_stream_optimized_disk(
+        context, timeout_secs, write_handle, **kwargs):
+    """Copy virtual disk from VMware server to the given write handle.
+
+    :param context: context
+    :param timeout_secs: time in seconds to wait for the copy to complete
+    :param write_handle: copy destination
+    :param kwargs: keyword arguments to configure the source
+                   VMDK read handle
+    :raises: VimException, VimFaultException, VimAttributeException,
+             VimSessionOverLoadException, VimConnectionException,
+             ImageTransferException, ValueError
+    """
+    vmdk_file_path = kwargs.get('vmdk_file_path')
+    LOG.debug("Copying virtual disk: %(vmdk_path)s to %(dest)s.",
+              {'vmdk_path': vmdk_file_path,
+               'dest': write_handle.name})
+    file_size = kwargs.get('vmdk_size')
+    read_handle = rw_handles.VmdkReadHandle(kwargs.get('session'),
+                                            kwargs.get('host'),
+                                            kwargs.get('port'),
+                                            kwargs.get('vm'),
+                                            kwargs.get('vmdk_file_path'),
+                                            file_size)
+    _start_transfer(context, timeout_secs, read_handle, file_size,
+                    write_file_handle=write_handle)
+    LOG.debug("Downloaded virtual disk: %s.", vmdk_file_path)
 
 
 def upload_image(context, timeout_secs, image_service, image_id, owner_id,

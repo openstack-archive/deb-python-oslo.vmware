@@ -25,16 +25,22 @@ import logging
 
 import six
 
+from oslo.vmware._i18n import _, _LE, _LI, _LW
 from oslo.vmware.common import loopingcall
 from oslo.vmware import exceptions
 from oslo.vmware.openstack.common import excutils
-from oslo.vmware.openstack.common.gettextutils import _
 from oslo.vmware import pbm
 from oslo.vmware import vim
 from oslo.vmware import vim_util
 
 
 LOG = logging.getLogger(__name__)
+
+
+def _trunc_id(session_id):
+    """Returns truncated session id which is suitable for logging."""
+    if session_id is not None:
+        return session_id[-5:]
 
 
 # TODO(vbala) Move this class to excutils.py.
@@ -78,29 +84,27 @@ class RetryDecorator(object):
 
         def _func(*args, **kwargs):
             func_name = f.__name__
+            result = None
             try:
-                LOG.debug("Invoking %(func_name)s; retry count is "
-                          "%(retry_count)d.",
-                          {'func_name': func_name,
-                           'retry_count': self._retry_count})
+                if self._retry_count:
+                    LOG.debug("Invoking %(func_name)s; retry count is "
+                              "%(retry_count)d.",
+                              {'func_name': func_name,
+                               'retry_count': self._retry_count})
                 result = f(*args, **kwargs)
-                LOG.debug("Function %(func_name)s returned successfully "
-                          "after %(retry_count)d retries.",
-                          {'func_name': func_name,
-                           'retry_count': self._retry_count})
             except self._exceptions:
                 with excutils.save_and_reraise_exception() as ctxt:
-                    LOG.warn(_("Exception which is in the suggested list of "
-                               "exceptions occurred while invoking function:"
-                               " %s."),
+                    LOG.warn(_LW("Exception which is in the suggested list of "
+                                 "exceptions occurred while invoking function:"
+                                 " %s."),
                              func_name,
                              exc_info=True)
                     if (self._max_retry_count != -1 and
                             self._retry_count >= self._max_retry_count):
-                        LOG.error(_("Cannot retry upon suggested exception "
-                                    "since retry count (%(retry_count)d) "
-                                    "reached max retry count "
-                                    "(%(max_retry_count)d)."),
+                        LOG.error(_LE("Cannot retry upon suggested exception "
+                                      "since retry count (%(retry_count)d) "
+                                      "reached max retry count "
+                                      "(%(max_retry_count)d)."),
                                   {'retry_count': self._retry_count,
                                    'max_retry_count': self._max_retry_count})
                     else:
@@ -110,9 +114,9 @@ class RetryDecorator(object):
                         return self._sleep_time
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.exception(_("Exception which is not in the "
-                                    "suggested list of exceptions occurred "
-                                    "while invoking %s."),
+                    LOG.exception(_LE("Exception which is not in the "
+                                      "suggested list of exceptions occurred "
+                                      "while invoking %s."),
                                   func_name)
             raise loopingcall.LoopingCallDone(result)
 
@@ -180,21 +184,21 @@ class VMwareAPISession(object):
             self._vim = vim.Vim(protocol=self._scheme,
                                 host=self._host,
                                 port=self._port,
-                                wsdl_loc=self._vim_wsdl_loc)
+                                wsdl_url=self._vim_wsdl_loc)
         return self._vim
 
     @property
     def pbm(self):
         if not self._pbm and self._pbm_wsdl_loc:
-            self._pbm = pbm.PBMClient(self._pbm_wsdl_loc,
-                                      protocol=self._scheme,
-                                      host=self._host,
-                                      port=self._port)
+            self._pbm = pbm.Pbm(protocol=self._scheme,
+                                host=self._host,
+                                port=self._port,
+                                wsdl_url=self._pbm_wsdl_loc)
             if self._session_id:
                 # To handle the case where pbm property is accessed after
                 # session creation. If pbm property is accessed before session
                 # creation, we set the cookie in _create_session.
-                self._pbm.set_cookie(self._get_session_cookie())
+                self._pbm.set_soap_cookie(self._vim.get_http_cookie())
         return self._pbm
 
     @RetryDecorator(exceptions=(exceptions.VimConnectionException,))
@@ -213,15 +217,16 @@ class VMwareAPISession(object):
         # object. We can't use the username used for login since the Login
         # method ignores the case.
         self._session_username = session.userName
-        LOG.info(_("Successfully established new session; session ID is %s."),
-                 self._session_id)
+        LOG.info(_LI("Successfully established new session; session ID is "
+                     "%s."),
+                 _trunc_id(self._session_id))
 
         # Terminate the previous session (if exists) for preserving sessions
         # as there is a limit on the number of sessions we can have.
         if prev_session_id:
             try:
-                LOG.info(_("Terminating the previous session with ID = %s"),
-                         prev_session_id)
+                LOG.info(_LI("Terminating the previous session with ID = %s"),
+                         _trunc_id(prev_session_id))
                 self.vim.TerminateSession(session_manager,
                                           sessionId=[prev_session_id])
             except Exception:
@@ -230,29 +235,29 @@ class VMwareAPISession(object):
                 # have been cleared already. We could have made a call to
                 # SessionIsActive, but that is an overhead because we
                 # anyway would have to call TerminateSession.
-                LOG.warn(_("Error occurred while terminating the previous "
-                           "session with ID = %s."),
-                         prev_session_id,
+                LOG.warn(_LW("Error occurred while terminating the previous "
+                             "session with ID = %s."),
+                         _trunc_id(prev_session_id),
                          exc_info=True)
 
         # Set PBM client cookie.
         if self._pbm is not None:
-            self._pbm.set_cookie(self._get_session_cookie())
+            self._pbm.set_soap_cookie(self._vim.get_http_cookie())
 
     def logout(self):
         """Log out and terminate the current session."""
         if self._session_id:
-            LOG.info(_("Logging out and terminating the current session with "
-                       "ID = %s."),
-                     self._session_id)
+            LOG.info(_LI("Logging out and terminating the current session "
+                         "with ID = %s."),
+                     _trunc_id(self._session_id))
             try:
                 self.vim.Logout(self.vim.service_content.sessionManager)
                 self._session_id = None
             except Exception:
-                LOG.exception(_("Error occurred while logging out and "
-                                "terminating the current session with "
-                                "ID = %s."),
-                              self._session_id)
+                LOG.exception(_LE("Error occurred while logging out and "
+                                  "terminating the current session with "
+                                  "ID = %s."),
+                              _trunc_id(self._session_id))
         else:
             LOG.debug("No session exists to log out.")
 
@@ -276,9 +281,6 @@ class VMwareAPISession(object):
                         exceptions=(exceptions.VimSessionOverLoadException,
                                     exceptions.VimConnectionException))
         def _invoke_api(module, method, *args, **kwargs):
-            LOG.debug("Invoking method %(module)s.%(method)s.",
-                      {'module': module,
-                       'method': method})
             try:
                 api_method = getattr(module, method)
                 return api_method(*args, **kwargs)
@@ -305,7 +307,7 @@ class VMwareAPISession(object):
                             _("Current session: %(session)s is inactive; "
                               "re-creating the session while invoking "
                               "method %(module)s.%(method)s.") %
-                            {'session': self._session_id,
+                            {'session': _trunc_id(self._session_id),
                              'module': module,
                              'method': method})
                         LOG.warn(excep_msg, exc_info=True)
@@ -318,15 +320,17 @@ class VMwareAPISession(object):
                     # Raise specific exceptions here if possible
                     if excep.fault_list:
                         LOG.debug("Fault list: %s", excep.fault_list)
-                        raise exceptions.get_fault_class(excep.fault_list[0])
+                        fault = excep.fault_list[0]
+                        clazz = exceptions.get_fault_class(fault)
+                        raise clazz(unicode(excep), excep.details)
                     raise
 
             except exceptions.VimConnectionException:
                 with excutils.save_and_reraise_exception():
                     # Re-create the session during connection exception.
-                    LOG.warn(_("Re-creating session due to connection "
-                               "problems while invoking method "
-                               "%(module)s.%(method)s."),
+                    LOG.warn(_LW("Re-creating session due to connection "
+                                 "problems while invoking method "
+                                 "%(module)s.%(method)s."),
                              {'module': module,
                               'method': method},
                              exc_info=True)
@@ -340,7 +344,7 @@ class VMwareAPISession(object):
         :returns: True if the session is active; False otherwise
         """
         LOG.debug("Checking if the current session: %s is active.",
-                  self._session_id)
+                  _trunc_id(self._session_id))
 
         is_active = False
         try:
@@ -349,9 +353,9 @@ class VMwareAPISession(object):
                 sessionID=self._session_id,
                 userName=self._session_username)
         except exceptions.VimException:
-            LOG.warn(_("Error occurred while checking whether the "
-                       "current session: %s is active."),
-                     self._session_id,
+            LOG.warn(_LW("Error occurred while checking whether the "
+                         "current session: %s is active."),
+                     _trunc_id(self._session_id),
                      exc_info=True)
 
         return is_active
@@ -391,8 +395,8 @@ class VMwareAPISession(object):
                                         'info')
         except exceptions.VimException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Error occurred while reading info of "
-                                "task: %s."),
+                LOG.exception(_LE("Error occurred while reading info of "
+                                  "task: %s."),
                               task)
         else:
             if task_info.state in ['queued', 'running']:
@@ -446,8 +450,8 @@ class VMwareAPISession(object):
                                     'state')
         except exceptions.VimException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Error occurred while checking "
-                                "state of lease: %s."),
+                LOG.exception(_LE("Error occurred while checking "
+                                  "state of lease: %s."),
                               lease)
         else:
             if state == 'ready':
@@ -467,7 +471,8 @@ class VMwareAPISession(object):
             else:
                 # unknown state
                 excep_msg = _("Unknown state: %(state)s for lease: "
-                              "%(lease)s.") % {'state': state, 'lease': lease}
+                              "%(lease)s.") % {'state': state,
+                                               'lease': lease}
                 LOG.error(excep_msg)
                 raise exceptions.VimException(excep_msg)
 
@@ -480,19 +485,8 @@ class VMwareAPISession(object):
                                    lease,
                                    'error')
         except exceptions.VimException:
-            LOG.warn(_("Error occurred while reading error message for lease: "
-                       "%s."),
+            LOG.warn(_LW("Error occurred while reading error message for "
+                         "lease: %s."),
                      lease,
                      exc_info=True)
             return "Unknown"
-
-    def _get_session_cookie(self):
-        """Get the cookie corresponding to the current session.
-
-        :returns: cookie corresponding to the current session
-        """
-        cookies = self.vim.client.options.transport.cookiejar
-        for c in cookies:
-            if c.name.lower() == 'vmware_soap_session':
-                return c.value
-        return None
