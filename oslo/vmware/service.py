@@ -17,19 +17,25 @@
 Common classes that provide access to vSphere services.
 """
 
-import httplib
 import logging
-import urllib2
+import os
 
 import netaddr
+import requests
 import six
+import six.moves.http_client as httplib
 import suds
+from suds import cache
+from suds import client
+from suds import plugin
+from suds import transport
 
+from oslo.utils import timeutils
 from oslo.vmware._i18n import _
 from oslo.vmware import exceptions
 from oslo.vmware import vim_util
 
-
+CACHE_TIMEOUT = 60 * 60  # One hour cache timeout
 ADDRESS_IN_USE_ERROR = 'Address already in use'
 CONN_ABORT_ERROR = 'Software caused connection abort'
 RESP_NOT_XML_ERROR = 'Response is "text/html", not "text/xml"'
@@ -39,7 +45,7 @@ SERVICE_INSTANCE = 'ServiceInstance'
 LOG = logging.getLogger(__name__)
 
 
-class ServiceMessagePlugin(suds.plugin.MessagePlugin):
+class ServiceMessagePlugin(plugin.MessagePlugin):
     """Suds plug-in handling some special cases while calling VI SDK."""
 
     def add_attribute_for_value(self, node):
@@ -68,20 +74,127 @@ class ServiceMessagePlugin(suds.plugin.MessagePlugin):
         context.envelope.walk(self.add_attribute_for_value)
 
 
+class Response(six.BytesIO):
+    """Response with an input stream as source."""
+
+    def __init__(self, stream, status=200, headers=None):
+        self.status = status
+        self.headers = headers or {}
+        self.reason = requests.status_codes._codes.get(
+            status, [''])[0].upper().replace('_', ' ')
+        six.BytesIO.__init__(self, stream)
+
+    @property
+    def _original_response(self):
+        return self
+
+    @property
+    def msg(self):
+        return self
+
+    def read(self, chunk_size, **kwargs):
+        return six.BytesIO.read(self, chunk_size)
+
+    def info(self):
+        return self
+
+    def get_all(self, name, default):
+        result = self.headers.get(name)
+        if not result:
+            return default
+        return [result]
+
+    def getheaders(self, name):
+        return self.get_all(name, [])
+
+    def release_conn(self):
+        self.close()
+
+
+class LocalFileAdapter(requests.adapters.HTTPAdapter):
+    """Transport adapter for local files.
+
+    See http://stackoverflow.com/a/22989322
+    """
+
+    def _build_response_from_file(self, request):
+        file_path = request.url[7:]
+        with open(file_path, 'r') as f:
+            buff = bytearray(os.path.getsize(file_path))
+            f.readinto(buff)
+            resp = Response(buff)
+            return self.build_response(request, resp)
+
+    def send(self, request, stream=False, timeout=None,
+             verify=True, cert=None, proxies=None):
+        return self._build_response_from_file(request)
+
+
+class RequestsTransport(transport.Transport):
+    def __init__(self, cacert=None, insecure=True):
+        transport.Transport.__init__(self)
+        # insecure flag is used only if cacert is not
+        # specified.
+        self.verify = cacert if cacert else not insecure
+        self.session = requests.Session()
+        self.session.mount('file:///', LocalFileAdapter())
+        self.cookiejar = self.session.cookies
+
+    def open(self, request):
+        resp = self.session.get(request.url, verify=self.verify)
+        return six.StringIO(resp.content)
+
+    def send(self, request):
+        resp = self.session.post(request.url,
+                                 data=request.message,
+                                 headers=request.headers,
+                                 verify=self.verify)
+        return transport.Reply(resp.status_code, resp.headers, resp.content)
+
+
+class MemoryCache(cache.ObjectCache):
+    def __init__(self):
+        self._cache = {}
+
+    def get(self, key):
+        """Retrieves the value for a key or None."""
+        now = timeutils.utcnow_ts()
+        for k in list(self._cache):
+            (timeout, _value) = self._cache[k]
+            if timeout and now >= timeout:
+                del self._cache[k]
+
+        return self._cache.get(key, (0, None))[1]
+
+    def put(self, key, value, time=CACHE_TIMEOUT):
+        """Sets the value for a key."""
+        timeout = 0
+        if time != 0:
+            timeout = timeutils.utcnow_ts() + time
+        self._cache[key] = (timeout, value)
+        return True
+
+
+_CACHE = MemoryCache()
+
+
 class Service(object):
     """Base class containing common functionality for invoking vSphere
     services
     """
 
-    def __init__(self, wsdl_url=None, soap_url=None):
+    def __init__(self, wsdl_url=None, soap_url=None,
+                 cacert=None, insecure=True):
         self.wsdl_url = wsdl_url
         self.soap_url = soap_url
         LOG.debug("Creating suds client with soap_url='%s' and wsdl_url='%s'",
                   self.soap_url, self.wsdl_url)
-        self.client = suds.client.Client(self.wsdl_url,
-                                         location=self.soap_url,
-                                         plugins=[ServiceMessagePlugin()],
-                                         cache=suds.cache.NoCache())
+        transport = RequestsTransport(cacert, insecure)
+        self.client = client.Client(self.wsdl_url,
+                                    transport=transport,
+                                    location=self.soap_url,
+                                    plugins=[ServiceMessagePlugin()],
+                                    cache=_CACHE)
         self._service_content = None
 
     @staticmethod
@@ -182,10 +295,17 @@ class Service(object):
                 raise
 
             except suds.WebFault as excep:
+                fault_string = None
+                if excep.fault:
+                    fault_string = excep.fault.faultstring
+
                 doc = excep.document
-                fault_string = doc.childAtPath("/Envelope/Body/Fault/"
-                                               "faultstring").getText()
-                detail = doc.childAtPath('/Envelope/Body/Fault/detail')
+                detail = None
+                if doc is not None:
+                    detail = doc.childAtPath('/detail')
+                    if not detail:
+                        # NOTE(arnaud): this is needed with VC 5.1
+                        detail = doc.childAtPath('/Envelope/Body/Fault/detail')
                 fault_list = []
                 details = {}
                 if detail:
@@ -206,9 +326,9 @@ class Service(object):
                 raise exceptions.VimSessionOverLoadException(
                     _("httplib error in %s.") % attr_name, excep)
 
-            except (urllib2.URLError, urllib2.HTTPError) as excep:
+            except requests.RequestException as excep:
                 raise exceptions.VimConnectionException(
-                    _("urllib2 error in %s.") % attr_name, excep)
+                    _("requests error in %s.") % attr_name, excep)
 
             except Exception as excep:
                 # TODO(vbala) should catch specific exceptions and raise

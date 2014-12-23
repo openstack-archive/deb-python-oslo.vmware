@@ -25,10 +25,10 @@ import logging
 
 import six
 
+from oslo.utils import excutils
 from oslo.vmware._i18n import _, _LE, _LI, _LW
 from oslo.vmware.common import loopingcall
 from oslo.vmware import exceptions
-from oslo.vmware.openstack.common import excutils
 from oslo.vmware import pbm
 from oslo.vmware import vim
 from oslo.vmware import vim_util
@@ -112,12 +112,6 @@ class RetryDecorator(object):
                         self._retry_count += 1
                         self._sleep_time += self._inc_sleep_time
                         return self._sleep_time
-            except Exception:
-                with excutils.save_and_reraise_exception():
-                    LOG.exception(_LE("Exception which is not in the "
-                                      "suggested list of exceptions occurred "
-                                      "while invoking %s."),
-                                  func_name)
             raise loopingcall.LoopingCallDone(result)
 
         def func(*args, **kwargs):
@@ -143,7 +137,7 @@ class VMwareAPISession(object):
     def __init__(self, host, server_username, server_password,
                  api_retry_count, task_poll_interval, scheme='https',
                  create_session=True, wsdl_loc=None, pbm_wsdl_loc=None,
-                 port=443):
+                 port=443, cacert=None, insecure=True):
         """Initializes the API session with given parameters.
 
         :param host: ESX/VC server IP address or host name
@@ -159,6 +153,10 @@ class VMwareAPISession(object):
                                instance creation
         :param wsdl_loc: VIM API WSDL file location
         :param pbm_wsdl_loc: PBM service WSDL file location
+        :param cacert: Specify a CA bundle file to use in verifying a
+                       TLS (https) server certificate.
+        :param insecure: Verify HTTPS connections using system certificates,
+                         used only if cacert is not specified
         :raises: VimException, VimFaultException, VimAttributeException,
                  VimSessionOverLoadException
         """
@@ -175,8 +173,15 @@ class VMwareAPISession(object):
         self._session_username = None
         self._vim = None
         self._pbm = None
+        self._cacert = cacert
+        self._insecure = insecure
         if create_session:
             self._create_session()
+
+    def pbm_wsdl_loc_set(self, pbm_wsdl_loc):
+        self._pbm_wsdl_loc = pbm_wsdl_loc
+        self._pbm = None
+        LOG.info(_LI('PBM WSDL updated to %s'), pbm_wsdl_loc)
 
     @property
     def vim(self):
@@ -184,7 +189,9 @@ class VMwareAPISession(object):
             self._vim = vim.Vim(protocol=self._scheme,
                                 host=self._host,
                                 port=self._port,
-                                wsdl_url=self._vim_wsdl_loc)
+                                wsdl_url=self._vim_wsdl_loc,
+                                cacert=self._cacert,
+                                insecure=self._insecure)
         return self._vim
 
     @property
@@ -193,7 +200,9 @@ class VMwareAPISession(object):
             self._pbm = pbm.Pbm(protocol=self._scheme,
                                 host=self._host,
                                 port=self._port,
-                                wsdl_url=self._pbm_wsdl_loc)
+                                wsdl_url=self._pbm_wsdl_loc,
+                                cacert=self._cacert,
+                                insecure=self._insecure)
             if self._session_id:
                 # To handle the case where pbm property is accessed after
                 # session creation. If pbm property is accessed before session
@@ -322,7 +331,7 @@ class VMwareAPISession(object):
                         LOG.debug("Fault list: %s", excep.fault_list)
                         fault = excep.fault_list[0]
                         clazz = exceptions.get_fault_class(fault)
-                        raise clazz(unicode(excep), excep.details)
+                        raise clazz(six.text_type(excep), excep.details)
                     raise
 
             except exceptions.VimConnectionException:
@@ -409,10 +418,6 @@ class VMwareAPISession(object):
                 raise loopingcall.LoopingCallDone(task_info)
             else:
                 error_msg = six.text_type(task_info.error.localizedMessage)
-                excep_msg = _("Task: %(task)s failed with error: "
-                              "%(error)s.") % {'task': task,
-                                               'error': error_msg}
-                LOG.error(excep_msg)
                 error = task_info.error
                 name = error.fault.__class__.__name__
                 task_ex = exceptions.get_fault_class(name)(error_msg)

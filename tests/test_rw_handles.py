@@ -18,6 +18,7 @@ Unit tests for read and write handles for image transfer.
 """
 
 import mock
+import six
 
 from oslo.vmware import exceptions
 from oslo.vmware import rw_handles
@@ -62,7 +63,8 @@ class FileWriteHandleTest(base.TestCase):
         vim_cookie.value = 'value'
 
         self._conn = mock.Mock()
-        patcher = mock.patch('httplib.HTTPConnection')
+        patcher = mock.patch(
+            'urllib3.connection.HTTPConnection')
         self.addCleanup(patcher.stop)
         HTTPConnectionMock = patcher.start()
         HTTPConnectionMock.return_value = self._conn
@@ -87,7 +89,8 @@ class VmdkWriteHandleTest(base.TestCase):
     def setUp(self):
         super(VmdkWriteHandleTest, self).setUp()
         self._conn = mock.Mock()
-        patcher = mock.patch('httplib.HTTPConnection')
+        patcher = mock.patch(
+            'urllib3.connection.HTTPConnection')
         self.addCleanup(patcher.stop)
         HTTPConnectionMock = patcher.start()
         HTTPConnectionMock.return_value = self._conn
@@ -180,16 +183,11 @@ class VmdkReadHandleTest(base.TestCase):
     def setUp(self):
         super(VmdkReadHandleTest, self).setUp()
 
-        req_patcher = mock.patch('urllib2.Request')
-        self.addCleanup(req_patcher.stop)
-        RequestMock = req_patcher.start()
-        RequestMock.return_value = mock.Mock()
-
-        urlopen_patcher = mock.patch('urllib2.urlopen')
-        self.addCleanup(urlopen_patcher.stop)
-        urlopen_mock = urlopen_patcher.start()
-        self._conn = mock.Mock()
-        urlopen_mock.return_value = self._conn
+        send_patcher = mock.patch('requests.sessions.Session.send')
+        self.addCleanup(send_patcher.stop)
+        send_mock = send_patcher.start()
+        self._response = mock.Mock()
+        send_mock.return_value = self._response
 
     def _create_mock_session(self, disk=True, progress=-1):
         device_url = mock.Mock()
@@ -229,24 +227,25 @@ class VmdkReadHandleTest(base.TestCase):
     def test_read(self):
         chunk_size = rw_handles.READ_CHUNKSIZE
         session = self._create_mock_session()
-        self._conn.read.return_value = [1] * chunk_size
+        self._response.raw.read.return_value = [1] * chunk_size
         handle = rw_handles.VmdkReadHandle(session, '10.1.2.3', 443,
                                            'vm-1', '[ds] disk1.vmdk',
                                            chunk_size * 10)
         handle.read(chunk_size)
         self.assertEqual(chunk_size, handle._bytes_read)
-        self._conn.read.assert_called_once_with(chunk_size)
+        self._response.raw.read.assert_called_once_with(chunk_size)
 
     def test_update_progress(self):
         chunk_size = rw_handles.READ_CHUNKSIZE
         vmdk_size = chunk_size * 10
         session = self._create_mock_session(True, 10)
-        self._conn.read.return_value = [1] * chunk_size
+        self._response.raw.read.return_value = [1] * chunk_size
         handle = rw_handles.VmdkReadHandle(session, '10.1.2.3', 443,
                                            'vm-1', '[ds] disk1.vmdk',
                                            vmdk_size)
         handle.read(chunk_size)
         handle.update_progress()
+        self._response.raw.read.assert_called_once_with(chunk_size)
 
     def test_update_progress_with_error(self):
         session = self._create_mock_session(True, 10)
@@ -281,7 +280,7 @@ class ImageReadHandleTest(base.TestCase):
         max_items = 10
         item = [1] * 10
 
-        class ImageReadIterator:
+        class ImageReadIterator(six.Iterator):
 
             def __init__(self):
                 self.num_items = 0
@@ -289,11 +288,13 @@ class ImageReadHandleTest(base.TestCase):
             def __iter__(self):
                 return self
 
-            def next(self):
+            def __next__(self):
                 if (self.num_items < max_items):
                     self.num_items += 1
                     return item
                 raise StopIteration
+
+            next = __next__
 
         handle = rw_handles.ImageReadHandle(ImageReadIterator())
         for _ in range(0, max_items):

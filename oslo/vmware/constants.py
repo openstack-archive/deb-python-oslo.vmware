@@ -21,3 +21,12 @@ Shared constants across the VMware ecosystem.
 # Datacenter path for HTTP access to datastores if the target server is an ESX/
 # ESXi system: http://goo.gl/B5Htr8 for more information.
 ESX_DATACENTER_PATH = 'ha-datacenter'
+
+# User Agent for HTTP requests between OpenStack and vCenter.
+USER_AGENT = 'OpenStack-ESX-Adapter'
+
+# Key of the cookie header when using a SOAP session.
+SOAP_COOKIE_KEY = 'vmware_soap_session'
+
+# Key of the cookie header when using a CGI session.
+CGI_COOKIE_KEY = 'vmware_cgi_ticket'

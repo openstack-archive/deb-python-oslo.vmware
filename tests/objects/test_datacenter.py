@@ -1,3 +1,4 @@
+# Copyright (c) 2014 VMware, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -11,7 +12,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import six
+import mock
+
+from oslo.vmware.objects import datacenter
+from tests import base
 
 
-six.add_move(six.MovedModule('mox', 'mox', 'mox3.mox'))
+class DatacenterTestCase(base.TestCase):
+
+    """Test the Datacenter object."""
+
+    def test_dc(self):
+        self.assertRaises(ValueError, datacenter.Datacenter, None, 'dc-1')
+        self.assertRaises(ValueError, datacenter.Datacenter, mock.Mock(), None)
+        dc = datacenter.Datacenter('ref', 'name')
+        self.assertEqual('ref', dc.ref)
+        self.assertEqual('name', dc.name)

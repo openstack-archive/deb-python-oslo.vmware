@@ -20,6 +20,7 @@ Unit tests for session management and API invocation classes.
 
 from eventlet import greenthread
 import mock
+import six
 import suds
 
 from oslo.vmware import api
@@ -108,6 +109,7 @@ class VMwareAPISessionTest(base.TestCase):
         self.addCleanup(patcher.stop)
         self.VimMock = patcher.start()
         self.VimMock.side_effect = lambda *args, **kw: mock.MagicMock()
+        self.cert_mock = mock.Mock()
 
     def _create_api_session(self, _create_session, retry_count=10,
                             task_poll_interval=1):
@@ -118,7 +120,9 @@ class VMwareAPISessionTest(base.TestCase):
                                     task_poll_interval,
                                     'https',
                                     _create_session,
-                                    port=VMwareAPISessionTest.PORT)
+                                    port=VMwareAPISessionTest.PORT,
+                                    cacert=self.cert_mock,
+                                    insecure=False)
 
     def test_vim(self):
         api_session = self._create_api_session(False)
@@ -126,7 +130,9 @@ class VMwareAPISessionTest(base.TestCase):
         self.VimMock.assert_called_with(protocol=api_session._scheme,
                                         host=VMwareAPISessionTest.SERVER_IP,
                                         port=VMwareAPISessionTest.PORT,
-                                        wsdl_url=api_session._vim_wsdl_loc)
+                                        wsdl_url=api_session._vim_wsdl_loc,
+                                        cacert=self.cert_mock,
+                                        insecure=False)
 
     @mock.patch.object(pbm, 'Pbm')
     def test_pbm(self, pbm_mock):
@@ -277,7 +283,7 @@ class VMwareAPISessionTest(base.TestCase):
         expected_str = "%s\nFaults: %s\nDetails: %s" % (fault_string,
                                                         fault_list,
                                                         details_str)
-        self.assertEqual(expected_str, unicode(e))
+        self.assertEqual(expected_str, six.text_type(e))
         self.assertEqual(details, e.details)
 
     def test_invoke_api_with_empty_response(self):
@@ -477,7 +483,7 @@ class VMwareAPISessionTest(base.TestCase):
                               'fake-task')
 
     def test_poll_task_well_known_exceptions(self):
-        for k, v in exceptions._fault_classes_registry.iteritems():
+        for k, v in six.iteritems(exceptions._fault_classes_registry):
             self._poll_task_well_known_exceptions(k, v)
 
     def test_poll_task_unknown_exception(self):
@@ -486,7 +492,7 @@ class VMwareAPISessionTest(base.TestCase):
             'RuntimeFault': exceptions.VMwareDriverException
         }
 
-        for k, v in _unknown_exceptions.iteritems():
+        for k, v in six.iteritems(_unknown_exceptions):
             self._poll_task_well_known_exceptions(k, v)
 
     def _create_subclass_exception(self):
@@ -509,3 +515,11 @@ class VMwareAPISessionTest(base.TestCase):
         self.assertRaises(TypeError,
                           exceptions.register_fault_class,
                           'ValueError', ValueError)
+
+    def test_update_pbm_wsdl_loc(self):
+        session = mock.Mock()
+        session.key = "12345"
+        api_session = self._create_api_session(False)
+        self.assertIsNone(api_session._pbm_wsdl_loc)
+        api_session.pbm_wsdl_loc_set('fake_wsdl')
+        self.assertEqual('fake_wsdl', api_session._pbm_wsdl_loc)

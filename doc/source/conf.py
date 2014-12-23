@@ -35,18 +35,19 @@ extensions = [
 # files.
 exclude_patterns = [
     'api/tests.*',  # avoid of docs generation from tests
-    'api/oslo.vmware.openstack.common.*',  # skip common modules
     'api/oslo.vmware._*',  # skip private modules
 ]
 
 # Prune the excluded patterns from the autoindex
-for line in fileinput.input('api/autoindex.rst', inplace=True):
-    found = False
-    for pattern in exclude_patterns:
-        if fnmatch.fnmatch(line, '*' + pattern[4:]):
-            found = True
-    if not found:
-        print line,
+PATH = 'api/autoindex.rst'
+if os.path.isfile(PATH) and os.access(PATH, os.R_OK):
+    for line in fileinput.input(PATH, inplace=True):
+        found = False
+        for pattern in exclude_patterns:
+            if fnmatch.fnmatch(line, '*' + pattern[4:]):
+                found = True
+        if not found:
+            print line,
 
 # The suffix of source filenames.
 source_suffix = '.rst'

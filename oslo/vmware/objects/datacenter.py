@@ -1,5 +1,4 @@
-# Copyright 2013 IBM Corp
-# All Rights Reserved.
+# Copyright (c) 2014 VMware, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,26 +12,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""
-Unit constants
-"""
+from oslo.vmware._i18n import _
 
-# Binary unit constants.
-Ki = 1024
-Mi = 1024 ** 2
-Gi = 1024 ** 3
-Ti = 1024 ** 4
-Pi = 1024 ** 5
-Ei = 1024 ** 6
-Zi = 1024 ** 7
-Yi = 1024 ** 8
 
-# Decimal unit constants.
-k = 1000
-M = 1000 ** 2
-G = 1000 ** 3
-T = 1000 ** 4
-P = 1000 ** 5
-E = 1000 ** 6
-Z = 1000 ** 7
-Y = 1000 ** 8
+class Datacenter(object):
+
+    def __init__(self, ref, name):
+        """Datacenter object holds ref and name together for convenience."""
+        if name is None:
+            raise ValueError(_("Datacenter name cannot be None"))
+        if ref is None:
+            raise ValueError(_("Datacenter reference cannot be None"))
+        self.ref = ref
+        self.name = name

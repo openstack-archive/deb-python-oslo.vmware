@@ -13,10 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import httplib
-import urllib2
-
 import mock
+import requests
+import six
+import six.moves.http_client as httplib
 import suds
 
 from oslo.vmware import exceptions
@@ -114,11 +114,12 @@ class ServiceTest(base.TestCase):
         managed_object = 'VirtualMachine'
         fault_list = ['Fault']
 
+        doc = mock.Mock()
+
         def side_effect(mo, **kwargs):
             self.assertEqual(managed_object, mo._type)
             self.assertEqual(managed_object, mo.value)
-            fault_string = mock.Mock()
-            fault_string.getText.return_value = "MyFault"
+            fault = mock.Mock(faultstring="MyFault")
 
             fault_children = mock.Mock()
             fault_children.name = "name"
@@ -128,21 +129,73 @@ class ServiceTest(base.TestCase):
             child.getChildren.return_value = [fault_children]
             detail = mock.Mock()
             detail.getChildren.return_value = [child]
-            doc = mock.Mock()
-            doc.childAtPath = mock.Mock(side_effect=[fault_string, detail])
-            raise suds.WebFault(None, doc)
+            doc.childAtPath.return_value = detail
+            raise suds.WebFault(fault, doc)
 
         svc_obj = service.Service()
-        attr_name = 'powerOn'
         service_mock = svc_obj.client.service
-        setattr(service_mock, attr_name, side_effect)
+        setattr(service_mock, 'powerOn', side_effect)
 
-        try:
-            svc_obj.powerOn(managed_object)
-        except exceptions.VimFaultException as ex:
-            self.assertEqual(fault_list, ex.fault_list)
-            self.assertEqual({'name': 'value'}, ex.details)
-            self.assertEqual("MyFault", ex.msg)
+        ex = self.assertRaises(exceptions.VimFaultException, svc_obj.powerOn,
+                               managed_object)
+
+        self.assertEqual(fault_list, ex.fault_list)
+        self.assertEqual({'name': 'value'}, ex.details)
+        self.assertEqual("MyFault", ex.msg)
+        doc.childAtPath.assertCalledOnceWith('/detail')
+
+    def test_request_handler_with_empty_web_fault_doc(self):
+
+        def side_effect(mo, **kwargs):
+            fault = mock.Mock(faultstring="MyFault")
+            raise suds.WebFault(fault, None)
+
+        svc_obj = service.Service()
+        service_mock = svc_obj.client.service
+        setattr(service_mock, 'powerOn', side_effect)
+
+        ex = self.assertRaises(exceptions.VimFaultException,
+                               svc_obj.powerOn,
+                               'VirtualMachine')
+        self.assertEqual([], ex.fault_list)
+        self.assertEqual({}, ex.details)
+        self.assertEqual("MyFault", ex.msg)
+
+    def test_request_handler_with_vc51_web_fault(self):
+        managed_object = 'VirtualMachine'
+        fault_list = ['Fault']
+
+        doc = mock.Mock()
+
+        def side_effect(mo, **kwargs):
+            self.assertEqual(managed_object, mo._type)
+            self.assertEqual(managed_object, mo.value)
+            fault = mock.Mock(faultstring="MyFault")
+
+            fault_children = mock.Mock()
+            fault_children.name = "name"
+            fault_children.getText.return_value = "value"
+            child = mock.Mock()
+            child.get.return_value = fault_list[0]
+            child.getChildren.return_value = [fault_children]
+            detail = mock.Mock()
+            detail.getChildren.return_value = [child]
+            doc.childAtPath.side_effect = [None, detail]
+            raise suds.WebFault(fault, doc)
+
+        svc_obj = service.Service()
+        service_mock = svc_obj.client.service
+        setattr(service_mock, 'powerOn', side_effect)
+
+        ex = self.assertRaises(exceptions.VimFaultException, svc_obj.powerOn,
+                               managed_object)
+
+        self.assertEqual(fault_list, ex.fault_list)
+        self.assertEqual({'name': 'value'}, ex.details)
+        self.assertEqual("MyFault", ex.msg)
+        exp_calls = [mock.call('/detail'),
+                     mock.call('/Envelope/Body/Fault/detail')]
+        self.assertEqual(exp_calls, doc.childAtPath.call_args_list)
 
     def test_request_handler_with_attribute_error(self):
         managed_object = 'VirtualMachine'
@@ -202,13 +255,13 @@ class ServiceTest(base.TestCase):
                           svc_obj.powerOn,
                           managed_object)
 
-    def test_request_handler_with_url_error(self):
+    def test_request_handler_with_connection_error(self):
         managed_object = 'VirtualMachine'
 
         def side_effect(mo, **kwargs):
             self.assertEqual(managed_object, mo._type)
             self.assertEqual(managed_object, mo.value)
-            raise urllib2.URLError(None)
+            raise requests.ConnectionError()
 
         svc_obj = service.Service()
         attr_name = 'powerOn'
@@ -224,7 +277,7 @@ class ServiceTest(base.TestCase):
         def side_effect(mo, **kwargs):
             self.assertEqual(managed_object, mo._type)
             self.assertEqual(managed_object, mo.value)
-            raise urllib2.HTTPError(None, None, None, None, None)
+            raise requests.HTTPError()
 
         svc_obj = service.Service()
         attr_name = 'powerOn'
@@ -288,3 +341,106 @@ class ServiceTest(base.TestCase):
         cookie.value = 'xyz'
         svc_obj.client.options.transport.cookiejar = [cookie]
         self.assertIsNone(svc_obj.get_http_cookie())
+
+
+class MemoryCacheTest(base.TestCase):
+    """Test class for MemoryCache."""
+
+    def test_get_set(self):
+        cache = service.MemoryCache()
+        cache.put('key1', 'value1')
+        cache.put('key2', 'value2')
+        self.assertEqual('value1', cache.get('key1'))
+        self.assertEqual('value2', cache.get('key2'))
+        self.assertEqual(None, cache.get('key3'))
+
+    @mock.patch('suds.reader.DocumentReader.download')
+    def test_shared_cache(self, mock_reader):
+        cache1 = service.Service().client.options.cache
+        cache2 = service.Service().client.options.cache
+        self.assertIs(cache1, cache2)
+
+    @mock.patch('oslo.utils.timeutils.utcnow_ts')
+    def test_cache_timeout(self, mock_utcnow_ts):
+        mock_utcnow_ts.side_effect = [100, 125, 150, 175, 195, 200, 225]
+
+        cache = service.MemoryCache()
+        cache.put('key1', 'value1', 10)
+        cache.put('key2', 'value2', 75)
+        cache.put('key3', 'value3', 100)
+
+        self.assertIsNone(cache.get('key1'))
+        self.assertEqual('value2', cache.get('key2'))
+        self.assertIsNone(cache.get('key2'))
+        self.assertEqual('value3', cache.get('key3'))
+
+
+class RequestsTransportTest(base.TestCase):
+    """Tests for RequestsTransport."""
+
+    def test_open(self):
+        transport = service.RequestsTransport()
+
+        data = "Hello World"
+        resp = mock.Mock(content=data)
+        transport.session.get = mock.Mock(return_value=resp)
+
+        request = mock.Mock(url=mock.sentinel.url)
+        self.assertEqual(data,
+                         transport.open(request).getvalue())
+        transport.session.get.assert_called_once_with(mock.sentinel.url,
+                                                      verify=transport.verify)
+
+    def test_send(self):
+        transport = service.RequestsTransport()
+
+        resp = mock.Mock(status_code=mock.sentinel.status_code,
+                         headers=mock.sentinel.headers,
+                         content=mock.sentinel.content)
+        transport.session.post = mock.Mock(return_value=resp)
+
+        request = mock.Mock(url=mock.sentinel.url,
+                            message=mock.sentinel.message,
+                            headers=mock.sentinel.req_headers)
+        reply = transport.send(request)
+
+        self.assertEqual(mock.sentinel.status_code, reply.code)
+        self.assertEqual(mock.sentinel.headers, reply.headers)
+        self.assertEqual(mock.sentinel.content, reply.message)
+
+    @mock.patch('os.path.getsize')
+    def test_send_with_local_file_url(self, get_size_mock):
+        transport = service.RequestsTransport()
+
+        url = 'file:///foo'
+        request = requests.PreparedRequest()
+        request.url = url
+
+        data = b"Hello World"
+        get_size_mock.return_value = len(data)
+
+        def readinto_mock(buf):
+            buf[0:] = data
+
+        if six.PY3:
+            builtin_open = 'builtins.open'
+            open_mock = mock.MagicMock(name='file_handle',
+                                       spec=open)
+            import _io
+            file_spec = list(set(dir(_io.TextIOWrapper)).union(
+                set(dir(_io.BytesIO))))
+        else:
+            builtin_open = '__builtin__.open'
+            open_mock = mock.MagicMock(name='file_handle',
+                                       spec=file)
+            file_spec = file
+
+        file_handle = mock.MagicMock(spec=file_spec)
+        file_handle.write.return_value = None
+        file_handle.__enter__.return_value = file_handle
+        file_handle.readinto.side_effect = readinto_mock
+        open_mock.return_value = file_handle
+
+        with mock.patch(builtin_open, open_mock, create=True):
+            resp = transport.session.send(request)
+            self.assertEqual(data, resp.content)

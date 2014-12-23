@@ -42,6 +42,12 @@ DUPLICATE_NAME = 'DuplicateName'
 class VimException(Exception):
     """The base exception class for all exceptions this library raises."""
 
+    if six.PY2:
+        __str__ = lambda self: six.text_type(self).encode('utf8')
+        __unicode__ = lambda self: self.description
+    else:
+        __str__ = lambda self: self.description
+
     def __init__(self, message, cause=None):
         Exception.__init__(self)
         if isinstance(message, list):
@@ -49,13 +55,17 @@ class VimException(Exception):
             # this method like VimFaultException
             raise ValueError(_("exception_summary must not be a list"))
 
-        self.msg = str(message)
+        self.msg = message
         self.cause = cause
 
-    def __str__(self):
-        descr = self.msg
+    @property
+    def description(self):
+        # NOTE(jecarey): self.msg and self.cause may be i18n objects
+        # that do not support str or concatenation, but can be used
+        # as replacement text.
+        descr = six.text_type(self.msg)
         if self.cause:
-            descr += '\nCause: ' + str(self.cause)
+            descr += '\nCause: ' + six.text_type(self.cause)
         return descr
 
 
@@ -86,18 +96,21 @@ class VimFaultException(VimException):
         self.fault_list = fault_list
         self.details = details
 
-    def __str__(self):
-        return unicode(self).encode('utf8')
+    if six.PY2:
+        __unicode__ = lambda self: self.description
+    else:
+        __str__ = lambda self: self.description
 
-    def __unicode__(self):
-        descr = unicode(VimException.__str__(self))
+    @property
+    def description(self):
+        descr = VimException.description.fget(self)
         if self.fault_list:
             # fault_list doesn't contain non-ASCII chars, we can use str()
             descr += '\nFaults: ' + str(self.fault_list)
         if self.details:
             # details may contain non-ASCII values
-            details = '{%s}' % ', '.join(["'%s': '%s'" % (k, v)
-                                         for k, v in self.details.iteritems()])
+            details = '{%s}' % ', '.join(["'%s': '%s'" % (k, v) for k, v in
+                                          six.iteritems(self.details)])
             descr += '\nDetails: ' + details
         return descr
 
