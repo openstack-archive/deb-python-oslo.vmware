@@ -52,7 +52,7 @@ class VimUtilTest(base.TestCase):
         self.assertFalse(traversal_spec.skip)
         self.assertEqual("Datacenter", traversal_spec.type)
 
-    @mock.patch.object(vim_util, 'build_selection_spec')
+    @mock.patch('oslo_vmware.vim_util.build_selection_spec')
     def test_build_recursive_traversal_spec(self, build_selection_spec_mock):
         sel_spec = mock.Mock()
         rp_to_rp_sel_spec = mock.Mock()
@@ -176,7 +176,7 @@ class VimUtilTest(base.TestCase):
         self.assertEqual(prop_specs, filter_spec.propSet)
 
     @mock.patch(
-        'oslo.vmware.vim_util.build_recursive_traversal_spec')
+        'oslo_vmware.vim_util.build_recursive_traversal_spec')
     def test_get_objects(self, build_recursive_traversal_spec):
         vim = mock.Mock()
         trav_spec = mock.Mock()
@@ -215,7 +215,7 @@ class VimUtilTest(base.TestCase):
         ret = vim_util.get_object_properties(vim, None, None)
         self.assertIsNone(ret)
 
-    @mock.patch('oslo.vmware.vim_util.cancel_retrieval')
+    @mock.patch('oslo_vmware.vim_util.cancel_retrieval')
     def test_get_object_properties(self, cancel_retrieval):
         vim = mock.Mock()
         moref = mock.Mock()
@@ -253,11 +253,7 @@ class VimUtilTest(base.TestCase):
         self.assertTrue(res is retrieve_result.objects)
         cancel_retrieval.assert_called_once_with(vim, retrieve_result)
 
-    def test_get_token(self):
-        retrieve_result = object()
-        self.assertFalse(vim_util._get_token(retrieve_result))
-
-    @mock.patch('oslo.vmware.vim_util._get_token')
+    @mock.patch('oslo_vmware.vim_util._get_token')
     def test_cancel_retrieval(self, get_token):
         token = mock.Mock()
         get_token.return_value = token
@@ -268,7 +264,7 @@ class VimUtilTest(base.TestCase):
         vim.CancelRetrievePropertiesEx.assert_called_once_with(
             vim.service_content.propertyCollector, token=token)
 
-    @mock.patch('oslo.vmware.vim_util._get_token')
+    @mock.patch('oslo_vmware.vim_util._get_token')
     def test_continue_retrieval(self, get_token):
         token = mock.Mock()
         get_token.return_value = token
@@ -279,7 +275,7 @@ class VimUtilTest(base.TestCase):
         vim.ContinueRetrievePropertiesEx.assert_called_once_with(
             vim.service_content.propertyCollector, token=token)
 
-    @mock.patch('oslo.vmware.vim_util.get_object_properties')
+    @mock.patch('oslo_vmware.vim_util.get_object_properties')
     def test_get_object_property(self, get_object_properties):
         prop = mock.Mock()
         prop.val = "ubuntu-12.04"

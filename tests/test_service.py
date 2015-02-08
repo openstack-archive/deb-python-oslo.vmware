@@ -21,7 +21,6 @@ import suds
 
 from oslo.vmware import exceptions
 from oslo.vmware import service
-from oslo.vmware import vim_util
 from tests import base
 
 
@@ -287,7 +286,7 @@ class ServiceTest(base.TestCase):
                           svc_obj.powerOn,
                           managed_object)
 
-    @mock.patch.object(vim_util, 'get_moref', return_value=None)
+    @mock.patch('oslo_vmware.vim_util.get_moref', return_value=None)
     def test_request_handler_no_value(self, mock_moref):
         managed_object = 'VirtualMachine'
         svc_obj = service.Service()
