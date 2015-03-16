@@ -21,6 +21,7 @@ import logging
 import os
 
 import netaddr
+from oslo_utils import timeutils
 import requests
 import six
 import six.moves.http_client as httplib
@@ -30,7 +31,6 @@ from suds import client
 from suds import plugin
 from suds import transport
 
-from oslo.utils import timeutils
 from oslo_vmware._i18n import _
 from oslo_vmware import exceptions
 from oslo_vmware import vim_util
@@ -310,7 +310,10 @@ class Service(object):
                 details = {}
                 if detail:
                     for fault in detail.getChildren():
-                        fault_list.append(fault.get("type"))
+                        fault_type = fault.get('type')
+                        if fault_type.endswith(exceptions.SECURITY_ERROR):
+                            fault_type = exceptions.NOT_AUTHENTICATED
+                        fault_list.append(fault_type)
                         for child in fault.getChildren():
                             details[child.name] = child.getText()
                 raise exceptions.VimFaultException(fault_list, fault_string,
