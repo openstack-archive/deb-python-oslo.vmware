@@ -1,0 +1,17 @@
+Description: Do not run namespaced tests
+ Do not run namespaced tests from toplevel tests folder.
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: not-needed
+Last-Update: 2015-04-27
+
+--- python-oslo.vmware-0.11.1.orig/.testr.conf
++++ python-oslo.vmware-0.11.1/.testr.conf
+@@ -2,6 +2,6 @@
+ test_command=OS_STDOUT_CAPTURE=${OS_STDOUT_CAPTURE:-1} \
+              OS_STDERR_CAPTURE=${OS_STDERR_CAPTURE:-1} \
+              OS_TEST_TIMEOUT=${OS_TEST_TIMEOUT:-60} \
+-             ${PYTHON:-python} -m subunit.run discover -t ./ . $LISTOPT $IDOPTION
++             ${PYTHON:-python} -m subunit.run discover -t ./ ./oslo_vmware $LISTOPT $IDOPTION
+ test_id_option=--load-list $IDFILE
+ test_list_option=--list
+\ No newline at end of file
