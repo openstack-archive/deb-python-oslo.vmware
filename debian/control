@@ -11,9 +11,6 @@ Build-Depends: debhelper (>= 9),
                python-all,
                python-pbr,
                python-setuptools,
-#               python3-all,
-#               python3-pbr,
-#               python3-setuptools,
                python-sphinx,
 Build-Depends-Indep: python-babel,
                      python-coverage,
@@ -64,6 +61,8 @@ Depends: python-babel,
          python-yaml,
          ${misc:Depends},
          ${python:Depends},
+Breaks: python-oslo-vmware (<< 0.13.1-1~),
+Replaces: python-oslo-vmware (<< 0.13.1-1~),
 Description: VMware library for OpenStack projects - Python 2.x
  This package is part of the Oslo project, which aims at providing unified
  Python libraries across all of OpenStack. It provides a VMware library
@@ -83,3 +82,19 @@ Description: VMware library for OpenStack projects - doc
  for OpenStack projects.
  .
  This package contains the documentation.
+
+Package: python-oslo-vmware
+Section: oldlibs
+Architecture: all
+Depends: python-oslo.vmware,
+         ${misc:Depends},
+Description: transitional dummy package for python-oslo-vmware.
+ This transtional package is safe to remove.
+
+Package: python-oslo-vmware-doc
+Section: oldlibs
+Architecture: all
+Depends: python-oslo.vmware-doc,
+         ${misc:Depends},
+Description: transitional dummy package for python-oslo-vmware-doc.
+ This transtional package is safe to remove.
