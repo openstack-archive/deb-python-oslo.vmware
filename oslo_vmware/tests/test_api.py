@@ -531,33 +531,12 @@ class VMwareAPISessionTest(base.TestCase):
 
     def test_poll_task_unknown_exception(self):
         _unknown_exceptions = {
-            'NoDiskSpace': exceptions.VMwareDriverException,
+            'NotAFile': exceptions.VMwareDriverException,
             'RuntimeFault': exceptions.VMwareDriverException
         }
 
         for k, v in six.iteritems(_unknown_exceptions):
             self._poll_task_well_known_exceptions(k, v)
-
-    def _create_subclass_exception(self):
-        class VimSubClass(exceptions.VMwareDriverException):
-            pass
-        return VimSubClass
-
-    def test_register_fault_class(self):
-        exc = self._create_subclass_exception()
-        exceptions.register_fault_class('ValueError', exc)
-        self.assertEqual(exc, exceptions.get_fault_class('ValueError'))
-
-    def test_register_fault_class_override(self):
-        exc = self._create_subclass_exception()
-        exceptions.register_fault_class(exceptions.ALREADY_EXISTS, exc)
-        self.assertEqual(exc,
-                         exceptions.get_fault_class(exceptions.ALREADY_EXISTS))
-
-    def test_register_fault_classi_invalid(self):
-        self.assertRaises(TypeError,
-                          exceptions.register_fault_class,
-                          'ValueError', ValueError)
 
     def test_update_pbm_wsdl_loc(self):
         session = mock.Mock()
