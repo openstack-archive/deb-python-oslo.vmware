@@ -1,3 +1,11 @@
+python-oslo.vmware (0.13.1-1) UNRELEASED; urgency=medium
+
+  * Team upload.
+  * New upstream release:
+    - d/control: Align version requirements and dependencies with upstream. 
+
+ -- James Page <james.page@ubuntu.com>  Wed, 03 Jun 2015 11:36:01 +0100
+
 python-oslo.vmware (0.11.1-1) unstable; urgency=medium
 
   * New upstream release.
