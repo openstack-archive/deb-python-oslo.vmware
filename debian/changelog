@@ -1,4 +1,4 @@
-python-oslo.vmware (0.13.1-1) UNRELEASED; urgency=medium
+python-oslo.vmware (0.13.1-1) experimental; urgency=medium
 
   * Team upload.
   * New upstream release:
@@ -8,7 +8,7 @@ python-oslo.vmware (0.13.1-1) UNRELEASED; urgency=medium
       *oslo-vmware packages in Ubuntu.
   * d/*: wrap-and-sort.
 
- -- James Page <james.page@ubuntu.com>  Wed, 03 Jun 2015 11:36:01 +0100
+ -- James Page <james.page@ubuntu.com>  Tue, 09 Jun 2015 08:52:14 +0100
 
 python-oslo.vmware (0.11.1-1) unstable; urgency=medium
 
