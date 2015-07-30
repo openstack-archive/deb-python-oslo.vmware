@@ -6,6 +6,7 @@ python-oslo.vmware (1.18.0-1) experimental; urgency=medium
   [ Thomas Goirand ]
   * New upstream release.
   * Fixed (build-)depends for this release.
+  * Transitional packages are of priority: extra.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 30 Jul 2015 20:33:39 +0000
 

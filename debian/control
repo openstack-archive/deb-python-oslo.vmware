@@ -44,7 +44,6 @@ Homepage: http://launchpad.net/oslo
 
 Package: python-oslo.vmware
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~),
 Depends: python-babel,
          python-eventlet (>= 0.17.4),
          python-httplib2,
@@ -74,7 +73,6 @@ Description: VMware library for OpenStack projects - Python 2.x
 Package: python-oslo.vmware-doc
 Section: doc
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~),
 Depends: ${misc:Depends},
          ${sphinxdoc:Depends},
 Description: VMware library for OpenStack projects - doc
@@ -86,16 +84,18 @@ Description: VMware library for OpenStack projects - doc
 
 Package: python-oslo-vmware
 Section: oldlibs
+Priority: extra
 Architecture: all
 Depends: python-oslo.vmware,
          ${misc:Depends},
-Description: transitional dummy package for python-oslo-vmware.
+Description: transitional dummy package for python-oslo-vmware
  This transitional package is safe to remove.
 
 Package: python-oslo-vmware-doc
 Section: oldlibs
+Priority: extra
 Architecture: all
 Depends: python-oslo.vmware-doc,
          ${misc:Depends},
-Description: transitional dummy package for python-oslo-vmware-doc.
+Description: transitional dummy package for python-oslo-vmware-doc
  This transitional package is safe to remove.
