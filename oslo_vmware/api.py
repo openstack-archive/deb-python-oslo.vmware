@@ -224,7 +224,7 @@ class VMwareAPISession(object):
 
         session_manager = self.vim.service_content.sessionManager
         # Login and create new session with the server for making API calls.
-        LOG.debug("Logging in with username = %s.", self._server_username)
+        LOG.debug("Logging into host: %s.", self._host)
         session = self.vim.Login(session_manager,
                                  userName=self._server_username,
                                  password=self._server_password)
@@ -309,7 +309,7 @@ class VMwareAPISession(object):
                             {'session': _trunc_id(self._session_id),
                              'module': module,
                              'method': method})
-                        LOG.warn(excep_msg, exc_info=True)
+                        LOG.debug(excep_msg)
                         self._create_session()
                         raise exceptions.VimConnectionException(excep_msg,
                                                                 excep)
@@ -321,7 +321,9 @@ class VMwareAPISession(object):
                         LOG.debug("Fault list: %s", excep.fault_list)
                         fault = excep.fault_list[0]
                         clazz = exceptions.get_fault_class(fault)
-                        raise clazz(six.text_type(excep), excep.details)
+                        if clazz:
+                            raise clazz(six.text_type(excep),
+                                        details=excep.details)
                     raise
 
             except exceptions.VimConnectionException:
@@ -330,12 +332,11 @@ class VMwareAPISession(object):
                     # if the session has expired. Otherwise, it could be
                     # a transient issue.
                     if not self.is_current_session_active():
-                        LOG.warn(_LW("Re-creating session due to connection "
-                                     "problems while invoking method "
-                                     "%(module)s.%(method)s."),
-                                 {'module': module,
-                                  'method': method},
-                                 exc_info=True)
+                        LOG.debug("Re-creating session due to connection "
+                                  "problems while invoking method "
+                                  "%(module)s.%(method)s.",
+                                  {'module': module,
+                                   'method': method})
                         self._create_session()
 
         return _invoke_api(module, method, *args, **kwargs)
@@ -354,11 +355,11 @@ class VMwareAPISession(object):
                 self.vim.service_content.sessionManager,
                 sessionID=self._session_id,
                 userName=self._session_username)
-        except exceptions.VimException:
-            LOG.warn(_LW("Error occurred while checking whether the "
-                         "current session: %s is active."),
-                     _trunc_id(self._session_id),
-                     exc_info=True)
+        except exceptions.VimException as ex:
+            LOG.debug("Error: %(error)s occurred while checking whether the "
+                      "current session: %(session)s is active.",
+                      {'error': six.text_type(ex),
+                       'session': _trunc_id(self._session_id)})
 
         return is_active
 
@@ -413,7 +414,12 @@ class VMwareAPISession(object):
                 error_msg = six.text_type(task_info.error.localizedMessage)
                 error = task_info.error
                 name = error.fault.__class__.__name__
-                task_ex = exceptions.get_fault_class(name)(error_msg)
+                fault_class = exceptions.get_fault_class(name)
+                if fault_class:
+                    task_ex = fault_class(error_msg)
+                else:
+                    task_ex = exceptions.VimFaultException([name],
+                                                           error_msg)
                 raise task_ex
 
     def wait_for_lease_ready(self, lease):
