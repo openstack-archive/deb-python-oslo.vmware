@@ -1,8 +1,12 @@
-python-oslo.vmware (1.18.0-3) UNRELEASED; urgency=medium
+python-oslo.vmware (1.21.0-0) experimental; urgency=medium
 
+  [ James Page ]
   * d/pydist-overrides: Map suds-jurko -> suds to ease backporting.
 
- -- James Page <james.page@ubuntu.com>  Tue, 11 Aug 2015 09:28:10 +0100
+  [ Thomas Goirand ]
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 27 Sep 2015 21:59:45 +0200
 
 python-oslo.vmware (1.18.0-2) experimental; urgency=medium
 
