@@ -1,4 +1,4 @@
-python-oslo.vmware (1.21.0-0) experimental; urgency=medium
+python-oslo.vmware (1.21.0-1) experimental; urgency=medium
 
   [ James Page ]
   * d/pydist-overrides: Map suds-jurko -> suds to ease backporting.
