@@ -1,16 +1,16 @@
-Welcome to oslo.vmware's documentation!
-=======================================
+===================================================
+ oslo.vmware --- VMware support code for OpenStack
+===================================================
 
-Contents:
+The Oslo VMware library provides support for common VMware operations
+and APIs.
 
 .. toctree::
    :maxdepth: 2
 
-   readme
    installation
    usage
    contributing
-   history
 
 Code Documentation
 ==================
@@ -19,6 +19,15 @@ Code Documentation
    :maxdepth: 1
 
    api/autoindex
+
+Release Notes
+=============
+
+.. toctree::
+   :maxdepth: 1
+
+   history
+
 
 Indices and tables
 ==================
