@@ -1,3 +1,9 @@
+python-oslo.vmware (2.0.0-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 03 Dec 2015 11:12:19 +0100
+
 python-oslo.vmware (1.21.0-2) unstable; urgency=medium
 
   * Uploading to unstable.
