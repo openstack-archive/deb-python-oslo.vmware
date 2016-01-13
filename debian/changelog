@@ -1,6 +1,7 @@
 python-oslo.vmware (2.2.0-1) experimental; urgency=medium
 
   * New upstream release.
+  * Fixed (build-)depends for this release.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 13 Jan 2016 23:05:35 +0000
 
