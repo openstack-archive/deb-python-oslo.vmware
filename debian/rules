@@ -16,10 +16,15 @@ override_dh_auto_install:
 		python$$pyvers setup.py install --install-layout=deb \
 			--root $(CURDIR)/debian/python-oslo.vmware; \
 	done
+	cp -auxf oslo_vmware/wsdl $(CURDIR)/debian/python-oslo.vmware/usr/lib/python2.7/dist-packages/oslo_vmware
 #	set -e ; for pyvers in $(PYTHON3S); do \
 #		python$$pyvers setup.py install --install-layout=deb \
 #			--root $(CURDIR)/debian/python3-oslo.vmware; \
 #	done
+
+override_dh_clean:
+	rm -rf build
+	dh_clean
 
 override_dh_auto_test:
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
