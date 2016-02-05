@@ -140,4 +140,4 @@ Architecture: all
 Depends: python-oslo.vmware-doc,
          ${misc:Depends},
 Description: transitional dummy package for python-oslo-vmware-doc
- This transitional package is safe to remove.
+ This transitional package to python-oslo.vmware-doc is safe to remove.
