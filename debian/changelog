@@ -3,6 +3,7 @@ python-oslo.vmware (2.2.1-2) experimental; urgency=medium
   * Added Python 3 support.
   * Using https VCS urls.
   * Fixed homepage field.
+  * Fixed debian/copyright ordering and years and holders.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 05 Feb 2016 03:55:49 +0000
 

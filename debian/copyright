@@ -2,14 +2,16 @@ Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: oslo.vmware
 Source: http://launchpad.net/oslo
 
-Files: debian/*
-Copyright: (c) 2013, Thomas Goirand <zigo@debian.org>
-License: Apache-2
-
 Files: *
 Copyright: (c) 2013, OpenStack Foundation
            (c) 2013, Hewlett-Packard Development Company, L.P.
-           (c) 2014, VMware, Inc.
+           (c) 2014-2016, VMware, Inc.
+           (c) 2011, Justin Santa Barbara
+           (c) 2010, US Government as represented by the Administrator of NASA
+License: Apache-2
+
+Files: debian/*
+Copyright: (c) 2013-2016, Thomas Goirand <zigo@debian.org>
 License: Apache-2
 
 License: Apache-2
