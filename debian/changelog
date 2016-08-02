@@ -1,3 +1,9 @@
+python-oslo.vmware (2.11.0-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+
+ -- David Della Vecchia <ddv@canonical.com>  Tue, 02 Aug 2016 11:25:41 -0400
+
 python-oslo.vmware (2.7.0-1) experimental; urgency=medium
 
   [ Ondřej Nový ]
