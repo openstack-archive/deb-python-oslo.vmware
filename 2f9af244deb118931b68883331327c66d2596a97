@@ -1,0 +1,10 @@
+Verified+1: VMware NSX CI
+Code-Review+2: Vipin Balachandran <vbala@vmware.com>
+Code-Review+2: Sabari <smurugesan@vmware.com>
+Workflow+1: Sabari <smurugesan@vmware.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 25 Jul 2016 21:29:14 +0000
+Reviewed-on: https://review.openstack.org/336510
+Project: openstack/deb-python-oslo.vmware
+Branch: refs/heads/master
