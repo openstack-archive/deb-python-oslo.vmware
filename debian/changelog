@@ -1,9 +1,17 @@
-python-oslo.vmware (2.11.0-1) UNRELEASED; urgency=medium
+python-oslo.vmware (2.14.0-1) experimental; urgency=medium
 
+  [ David Della Vecchia ]
   * New upstream release.
   * d/control: Align (build-)depends with upstream.
 
- -- David Della Vecchia <ddv@canonical.com>  Tue, 02 Aug 2016 11:25:41 -0400
+  [ Corey Bryant ]
+  * New upstream release.
+  * d/control: Align (build-)depends with upstream.
+ 
+  [ Thomas Goirand ]
+  * Using OpenStack's Gerrit as VCS URLs.
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 14 Sep 2016 09:54:59 +0200
 
 python-oslo.vmware (2.7.0-1) experimental; urgency=medium
 
