@@ -58,8 +58,8 @@ Build-Depends-Indep: python-coverage,
                      subunit,
                      testrepository,
 Standards-Version: 3.9.8
-Vcs-Browser: https://git.openstack.org/cgit/openstack/deb-python-oslo.vmware
-Vcs-Git: https://git.openstack.org/openstack/deb-python-oslo.vmware
+Vcs-Browser: https://git.openstack.org/cgit/openstack/deb-python-oslo.vmware?h=debian%2Fnewton
+Vcs-Git: https://git.openstack.org/openstack/deb-python-oslo.vmware -b debian/newton
 Homepage: https://github.com/openstack/oslo.vmware
 
 Package: python-oslo.vmware
