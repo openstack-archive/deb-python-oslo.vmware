@@ -1,0 +1,9 @@
+Verified+1: VMware NSX CI
+Code-Review+2: Eric Brown <browne@vmware.com>
+Workflow+1: Eric Brown <browne@vmware.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 27 Sep 2016 16:08:12 +0000
+Reviewed-on: https://review.openstack.org/377544
+Project: openstack/deb-python-oslo.vmware
+Branch: refs/heads/master
