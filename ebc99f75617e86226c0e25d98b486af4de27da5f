@@ -1,0 +1,8 @@
+Code-Review+2: Vipin Balachandran <vbala@vmware.com>
+Workflow+1: Vipin Balachandran <vbala@vmware.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 21 Oct 2016 15:24:05 +0000
+Reviewed-on: https://review.openstack.org/389447
+Project: openstack/deb-python-oslo.vmware
+Branch: refs/heads/master
