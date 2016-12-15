@@ -1,0 +1,9 @@
+Code-Review+2: garyk <gkotton@vmware.com>
+Code-Review+2: Eric Brown <browne@vmware.com>
+Workflow+1: Eric Brown <browne@vmware.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 14 Dec 2016 19:05:52 +0000
+Reviewed-on: https://review.openstack.org/410032
+Project: openstack/deb-python-oslo.vmware
+Branch: refs/heads/master
