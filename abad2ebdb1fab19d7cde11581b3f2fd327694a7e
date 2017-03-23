@@ -1,0 +1,9 @@
+Code-Review+2: Davanum Srinivas (dims) <davanum@gmail.com>
+Code-Review+2: Eric Brown <browne@vmware.com>
+Workflow+1: Eric Brown <browne@vmware.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sat, 11 Mar 2017 07:01:54 +0000
+Reviewed-on: https://review.openstack.org/355851
+Project: openstack/deb-python-oslo.vmware
+Branch: refs/heads/master
