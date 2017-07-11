@@ -1,0 +1,9 @@
+Code-Review+2: Radoslav Gerganov <rgerganov@vmware.com>
+Code-Review+2: ChangBo Guo(gcb) <glongwave@gmail.com>
+Workflow+1: ChangBo Guo(gcb) <glongwave@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 11 Jul 2017 11:08:21 +0000
+Reviewed-on: https://review.openstack.org/482362
+Project: openstack/deb-python-oslo.vmware
+Branch: refs/heads/master
